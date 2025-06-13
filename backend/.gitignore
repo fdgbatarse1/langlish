@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.log
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Pydantic cache
+*.pydantic/
+
+# Database files
+*.sqlite3
+*.db
+
+# Test outputs
+htmlcov/
+.coverage
+coverage.xml
+.cache
+pytest_cache/
+
+# Mypy, Pyright, Pylint, etc.
+.mypy_cache/
+.pyright/
+.pylint.d/
+
+# Environment files
+.env
+.env.*
+
+# Uvicorn and Gunicorn logs
+*.pid
+*.log
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Docker
+*.pid
+docker-compose.override.yml
