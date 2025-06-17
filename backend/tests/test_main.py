@@ -6,7 +6,7 @@ client = TestClient(app)
 
 def test_read_root() -> None:
     """Test the root endpoint returns correct status code and message.
-    
+
     Returns:
         None
     """
