@@ -1,80 +1,188 @@
-![reactjs-vite-tailwindcss-boilerplate](https://user-images.githubusercontent.com/16243531/217138979-b854309c-4742-4275-a705-f9fec5158217.jpg)
+# Langlish - English Learning Voice Assistant Frontend
 
-# React Tailwindcss Boilerplate build with Vite
+## Description
 
-This is a boilerplate build with Vite, React 18, TypeScript, Vitest, Testing Library, TailwindCSS 3, Eslint and Prettier.
+Langlish frontend is a modern React-based web application that provides the user interface for the voice-based English learning assistant. Built with React 18, TypeScript, and Vite for optimal performance and developer experience, it features real-time audio recording and playback capabilities for seamless voice interaction.
 
-## What is inside?
+## Features
 
-This project uses many tools like:
+- Real-time audio recording and playback
+- WebSocket communication with backend
+- Responsive design with Tailwind CSS
+- TypeScript for type safety
+- Modern React 18 with hooks
+- Vite for fast development and building
+- Audio processing and queue management
+- Voice activity detection integration
 
-- [Vite](https://vitejs.dev)
-- [ReactJS](https://reactjs.org)
-- [TypeScript](https://www.typescriptlang.org)
-- [Vitest](https://vitest.dev)
-- [Testing Library](https://testing-library.com)
-- [Tailwindcss](https://tailwindcss.com)
-- [Eslint](https://eslint.org)
-- [Prettier](https://prettier.io)
+## Prerequisites
 
-## Getting Started
+- Node.js 18 or higher
+- npm or pnpm package manager
+- Modern web browser with microphone access
+- Running Langlish backend service
 
-### Install
+## Installation
 
-Create the project.
+### Using pnpm (Recommended)
+
+1. Clone the repository and navigate to the frontend directory:
 
 ```bash
-pnpm dlx degit joaopaulomoraes/reactjs-vite-tailwindcss-boilerplate my-app
+cd frontend
 ```
 
-Access the project directory.
+2. Install pnpm if you haven't already:
 
 ```bash
-cd my-app
+npm install -g pnpm
 ```
 
-Install dependencies.
+3. Install dependencies:
 
 ```bash
 pnpm install
 ```
 
-Serve with hot reload at <http://localhost:5173>.
+### Using npm
+
+1. Navigate to the frontend directory:
+
+```bash
+cd frontend
+```
+
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+## Running the Application
+
+### Development Server
+
+Start the development server with hot reload:
 
 ```bash
 pnpm run dev
+# or
+npm run dev
 ```
 
-### Lint
+The application will be available at `http://localhost:5173`
 
-```bash
-pnpm run lint
-```
+### Production Build
 
-### Typecheck
-
-```bash
-pnpm run typecheck
-```
-
-### Build
+Build the application for production:
 
 ```bash
 pnpm run build
+# or
+npm run build
 ```
 
-### Test
+Preview the production build:
+
+```bash
+pnpm run preview
+# or
+npm run preview
+```
+
+## Development
+
+### Type Checking
+
+```bash
+pnpm run typecheck
+# or
+npm run typecheck
+```
+
+### Linting
+
+```bash
+pnpm run lint
+# or
+npm run lint
+```
+
+### Testing
+
+Run tests:
 
 ```bash
 pnpm run test
+# or
+npm run test
 ```
 
-View and interact with your tests via UI.
+Run tests with UI:
 
 ```bash
 pnpm run test:ui
+# or
+npm run test:ui
 ```
+
+## Configuration
+
+### Backend Connection
+
+The frontend connects to the backend WebSocket at `ws://localhost:8000/streamline` by default. To change this, modify the `socketUrl` constant in `src/components/App.tsx`.
+
+### Audio Settings
+
+Audio recording uses WebM/Opus format with the following default settings:
+
+- Sample rate: 24kHz (converted from browser default)
+- Channels: Mono
+- Format: PCM16 for backend communication
+
+## Project Structure
+
+```
+frontend/
+├── src/
+│   ├── components/      # React components
+│   │   └── App.tsx     # Main application component
+│   ├── index.tsx       # Application entry point
+│   └── index.css       # Global styles
+├── public/             # Static assets
+├── dist/               # Build output
+├── package.json        # Dependencies and scripts
+├── vite.config.ts      # Vite configuration
+├── tailwind.config.mjs # Tailwind CSS configuration
+├── tsconfig.json       # TypeScript configuration
+└── README.md           # This file
+```
+
+## Browser Compatibility
+
+- Chrome/Chromium 88+
+- Firefox 85+
+- Safari 14+
+- Edge 88+
+
+**Note:** Microphone access requires HTTPS in production environments.
+
+## Troubleshooting
+
+### Microphone Access Issues
+
+1. Ensure microphone permissions are granted
+2. Check browser console for permission errors
+3. Verify HTTPS is used in production
+4. Test microphone access in browser settings
+
+### WebSocket Connection Issues
+
+1. Verify backend server is running
+2. Check network connectivity
+3. Ensure WebSocket URL is correct
+4. Review browser console for connection errors
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the terms specified in the LICENSE file in the root directory.
