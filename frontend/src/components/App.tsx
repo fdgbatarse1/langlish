@@ -1,56 +1,66 @@
 import { Mic } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import useWebSocket, { ReadyState } from 'react-use-websocket'
 
 const socketUrl = 'ws://localhost:8000/streamline'
 
 const App = () => {
   const [recording, setRecording] = useState(false)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder>()
 
-  const { sendMessage, readyState } = useWebSocket(
-    socketUrl,
-    {
-      onOpen: () => console.log('WebSocket connected'),
-      onError: (error) => console.error('WebSocket error:', error),
-      shouldReconnect: () => false
-    },
-    recording
-  )
-
-  useEffect(() => () => stopRecording(), [])
+  const { sendMessage, readyState, getWebSocket, sendJsonMessage } =
+    useWebSocket(
+      socketUrl,
+      {
+        onOpen: () => {
+          console.log('🚀 WebSocket connected')
+        },
+        onMessage: (evt) => {
+          console.log('📡 WebSocket message:', evt.data)
+        },
+        onError: (error) => console.error('🔥 WebSocket error:', error),
+        shouldReconnect: () => false
+      },
+      recording
+    )
 
   const startRecording = async () => {
     try {
+      setRecording(true)
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm'
+      mediaRecorderRef.current = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
       })
-      mediaRecorderRef.current = mediaRecorder
 
-      mediaRecorder.ondataavailable = (event) => {
+      mediaRecorderRef.current.ondataavailable = (event) => {
         if (event.data.size && readyState === ReadyState.OPEN) {
           event.data.arrayBuffer().then((buffer) => sendMessage(buffer))
         }
       }
 
-      mediaRecorder.start(100)
-      setRecording(true)
+      mediaRecorderRef.current.start(100)
     } catch (error) {
-      console.error('Error starting recording:', error)
+      console.error('🔥 Error starting recording:', error)
     }
   }
 
-  const stopRecording = () => {
+  const stopRecording = useCallback(() => {
     mediaRecorderRef.current?.stop()
-    mediaRecorderRef.current = null
-    streamRef.current?.getTracks().forEach((track) => track.stop())
-    streamRef.current = null
+    mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop())
+    mediaRecorderRef.current = undefined
+    sendJsonMessage({
+      type: 'EOF'
+    })
+    getWebSocket()?.close()
     setRecording(false)
-  }
+  }, [sendJsonMessage, getWebSocket])
+
+  useEffect(() => {
+    console.log('🔍 useEffect')
+    return () => stopRecording()
+  }, [stopRecording])
 
   return (
     <div className="flex h-screen w-screen items-center justify-center">
