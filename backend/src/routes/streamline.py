@@ -2,6 +2,7 @@ import json
 import base64
 import asyncio
 import io
+from typing import Dict, Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import websockets
@@ -16,7 +17,15 @@ realtime_router = APIRouter()
 
 
 def convert_webm_to_pcm16(webm_data: bytes) -> bytes:
-    """Convert WebM/Opus audio to PCM16 24kHz mono for OpenAI."""
+    """
+    Convert WebM/Opus audio to PCM16 24kHz mono for OpenAI.
+    
+    Args:
+        webm_data: Raw WebM audio data as bytes
+        
+    Returns:
+        bytes: Converted PCM16 audio data, or empty bytes if conversion fails
+    """
     try:
         print(f"🔄 Converting WebM audio ({len(webm_data)} bytes)")
 
@@ -32,7 +41,19 @@ def convert_webm_to_pcm16(webm_data: bytes) -> bytes:
 
 
 @realtime_router.websocket("/streamline")
-async def streamline(websocket: WebSocket):
+async def streamline(websocket: WebSocket) -> None:
+    """
+    WebSocket endpoint for real-time audio streaming with OpenAI.
+    
+    Handles bidirectional audio streaming between client and OpenAI's real-time API,
+    including audio conversion, session management, and response handling.
+    
+    Args:
+        websocket: FastAPI WebSocket connection object
+        
+    Returns:
+        None
+    """
     print("🔌 WebSocket connection request received")
     await websocket.accept()
     print("✅ WebSocket connection accepted")
@@ -53,7 +74,7 @@ async def streamline(websocket: WebSocket):
         print("✅ Connected to OpenAI WebSocket")
 
         print("📝 Sending session configuration...")
-        session_config = {
+        session_config: Dict[str, Any] = {
             "type": "session.update",
             "session": {
                 "modalities": ["audio", "text"],
@@ -80,8 +101,17 @@ async def streamline(websocket: WebSocket):
         await openai_ws.send(json.dumps(session_config))
         print("✅ Session configuration sent")
 
-        async def handle_client_messages():
-            """Handle messages from the frontend client."""
+        async def handle_client_messages() -> None:
+            """
+            Handle messages from the frontend client.
+            
+            Processes incoming WebM audio data and text messages, converts audio
+            to PCM16 format, and sends to OpenAI. Handles EOF signals to trigger
+            response generation.
+            
+            Returns:
+                None
+            """
             nonlocal audio_buffer_size, response_active
 
             try:
@@ -147,8 +177,17 @@ async def streamline(websocket: WebSocket):
             except Exception as e:
                 print(f"🔴 Error handling client messages: {e}")
 
-        async def handle_openai_responses():
-            """Handle responses from OpenAI and send to frontend."""
+        async def handle_openai_responses() -> None:
+            """
+            Handle responses from OpenAI and send to frontend.
+            
+            Processes incoming events from OpenAI WebSocket, including audio deltas,
+            text deltas, completion signals, and error messages. Forwards audio
+            data to client and manages response state.
+            
+            Returns:
+                None
+            """
             nonlocal response_active
 
             try:
