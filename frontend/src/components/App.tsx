@@ -1,5 +1,5 @@
 import { Mic } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import useWebSocket, { ReadyState } from 'react-use-websocket'
 
 const socketUrl = 'ws://localhost:8000/streamline'
@@ -16,21 +16,16 @@ const App = () => {
       console.log('🚀 WebSocket connected')
     },
     onMessage: async (event) => {
-      // Handle audio data
       if (event.data instanceof Blob) {
         console.log('🎵 Received audio:', event.data.size, 'bytes')
         const arrayBuffer = await event.data.arrayBuffer()
 
-        // Add to queue instead of playing immediately
         audioQueueRef.current.push(arrayBuffer)
 
-        // Start playing if not already playing
         if (!isPlayingRef.current) {
           playNextAudioChunk()
         }
-      }
-      // Handle text messages
-      else if (typeof event.data === 'string') {
+      } else if (typeof event.data === 'string') {
         console.log('📝 Received:', event.data)
       }
     },
@@ -38,7 +33,6 @@ const App = () => {
     shouldReconnect: () => true
   })
 
-  // Play audio chunks one by one
   const playNextAudioChunk = async () => {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false
@@ -66,7 +60,6 @@ const App = () => {
       )
       const channelData = audioBuffer.getChannelData(0)
 
-      // Convert PCM16 to Float32
       for (let i = 0; i < pcm16Data.length; i++) {
         channelData[i] = pcm16Data[i] / (pcm16Data[i] < 0 ? 0x8000 : 0x7fff)
       }
@@ -75,17 +68,15 @@ const App = () => {
       source.buffer = audioBuffer
       source.connect(audioContextRef.current.destination)
 
-      // IMPORTANT: Wait for this chunk to finish before playing next
       source.onended = () => {
         console.log('🎵 Chunk finished, playing next...')
-        playNextAudioChunk() // Play next chunk only after this one ends
+        playNextAudioChunk()
       }
 
       source.start()
       console.log('🎵 Playing chunk')
     } catch (error) {
       console.error('🔴 Audio error:', error)
-      // On error, try next chunk
       playNextAudioChunk()
     }
   }
@@ -93,7 +84,7 @@ const App = () => {
   const startRecording = async () => {
     try {
       setRecording(true)
-      // Clear any pending audio when starting new recording
+
       audioQueueRef.current = []
       isPlayingRef.current = false
 
@@ -127,7 +118,7 @@ const App = () => {
     }
   }
 
-  const stopRecording = useCallback(() => {
+  const stopRecording = () => {
     if (mediaRecorderRef.current && recording) {
       mediaRecorderRef.current.stop()
       mediaRecorderRef.current.stream
@@ -136,7 +127,7 @@ const App = () => {
       mediaRecorderRef.current = undefined
       setRecording(false)
     }
-  }, [recording])
+  }
 
   useEffect(() => {
     return () => {
