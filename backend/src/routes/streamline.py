@@ -1,0 +1,252 @@
+import json
+import base64
+import asyncio
+import io
+from typing import Dict, Any
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import websockets
+from pydub import AudioSegment
+from src.config import OPENAI_API_KEY
+
+OPENAI_WS_URL = (
+    "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
+)
+
+realtime_router = APIRouter()
+
+
+def convert_webm_to_pcm16(webm_data: bytes) -> bytes:
+    """
+    Convert WebM/Opus audio to PCM16 24kHz mono for OpenAI.
+
+    Args:
+        webm_data: Raw WebM audio data as bytes
+
+    Returns:
+        bytes: Converted PCM16 audio data, or empty bytes if conversion fails
+    """
+    try:
+        print(f"🔄 Converting WebM audio ({len(webm_data)} bytes)")
+
+        audio = AudioSegment.from_file(io.BytesIO(webm_data), format="webm")
+
+        pcm_audio = audio.set_frame_rate(24000).set_channels(1).set_sample_width(2)
+
+        print(f"✅ Converted to PCM16: {len(pcm_audio.raw_data)} bytes")
+        return pcm_audio.raw_data
+    except Exception as e:
+        print(f"🔴 Error converting audio: {e}")
+        return b""
+
+
+@realtime_router.websocket("/streamline")
+async def streamline(websocket: WebSocket) -> None:
+    """
+    WebSocket endpoint for real-time audio streaming with OpenAI.
+
+    Handles bidirectional audio streaming between client and OpenAI's real-time API,
+    including audio conversion, session management, and response handling.
+
+    Args:
+        websocket: FastAPI WebSocket connection object
+
+    Returns:
+        None
+    """
+    print("🔌 WebSocket connection request received")
+    await websocket.accept()
+    print("✅ WebSocket connection accepted")
+
+    openai_ws = None
+    audio_buffer_size = 0
+    response_active = False
+
+    try:
+        print("🔗 Connecting to OpenAI WebSocket...")
+        openai_ws = await websockets.connect(
+            OPENAI_WS_URL,
+            additional_headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "OpenAI-Beta": "realtime=v1",
+            },
+        )
+        print("✅ Connected to OpenAI WebSocket")
+
+        print("📝 Sending session configuration...")
+        session_config: Dict[str, Any] = {
+            "type": "session.update",
+            "session": {
+                "modalities": ["audio", "text"],
+                "voice": "alloy",
+                "input_audio_format": "pcm16",
+                "output_audio_format": "pcm16",
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.5,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 500,
+                    "create_response": True,
+                },
+                "instructions": (
+                    "You are Langlish, a friendly and patient English learning "
+                    "assistant. You help students improve their English through "
+                    "conversation practice. Your role is to: help the user practice "
+                    "english conversation, correct grammar mistakes gently, suggest "
+                    "better vocabulary when appropriate, encourage the student, and "
+                    "adapt to the student's level."
+                ),
+            },
+        }
+        await openai_ws.send(json.dumps(session_config))
+        print("✅ Session configuration sent")
+
+        async def handle_client_messages() -> None:
+            """
+            Handle messages from the frontend client.
+
+            Processes incoming WebM audio data and text messages, converts audio
+            to PCM16 format, and sends to OpenAI. Handles EOF signals to trigger
+            response generation.
+
+            Returns:
+                None
+            """
+            nonlocal audio_buffer_size, response_active
+
+            try:
+                while True:
+                    message = await websocket.receive()
+
+                    if "bytes" in message:
+                        webm_data = message["bytes"]
+                        audio_buffer_size += len(webm_data)
+                        print(
+                            f"📨 Received WebM audio: {len(webm_data)} bytes "
+                            f"(total: {audio_buffer_size} bytes)"
+                        )
+
+                        pcm_data = convert_webm_to_pcm16(webm_data)
+                        if pcm_data:
+                            audio_b64 = base64.b64encode(pcm_data).decode("utf-8")
+
+                            await openai_ws.send(
+                                json.dumps(
+                                    {
+                                        "type": "input_audio_buffer.append",
+                                        "audio": audio_b64,
+                                    }
+                                )
+                            )
+                            print(
+                                f"📤 Sent PCM16 audio to OpenAI ({len(pcm_data)} bytes)"
+                            )
+                        else:
+                            print("🔴 Audio conversion failed, skipping chunk")
+                    elif "text" in message:
+                        try:
+                            data = json.loads(message["text"])
+                            if data.get("type") == "EOF" and not response_active:
+                                print(
+                                    f"🛑 Received EOF with {audio_buffer_size} bytes "
+                                    f"of total audio"
+                                )
+
+                                if audio_buffer_size > 5000:
+                                    response_active = True
+                                    await openai_ws.send(
+                                        json.dumps(
+                                            {"type": "input_audio_buffer.commit"}
+                                        )
+                                    )
+                                    await openai_ws.send(
+                                        json.dumps(
+                                            {
+                                                "type": "response.create",
+                                                "response": {
+                                                    "modalities": ["audio", "text"]
+                                                },
+                                            }
+                                        )
+                                    )
+                                    print("📤 Sent audio-based response request")
+                                else:
+                                    print("⚠️ Not enough audio data, skipping response")
+
+                                audio_buffer_size = 0
+
+                        except json.JSONDecodeError:
+                            print(f"📝 Non-JSON text message: {message['text']}")
+
+            except WebSocketDisconnect:
+                print("🔴 Client disconnected")
+            except Exception as e:
+                print(f"🔴 Error handling client messages: {e}")
+
+        async def handle_openai_responses() -> None:
+            """
+            Handle responses from OpenAI and send to frontend.
+
+            Processes incoming events from OpenAI WebSocket, including audio deltas,
+            text deltas, completion signals, and error messages. Forwards audio
+            data to client and manages response state.
+
+            Returns:
+                None
+            """
+            nonlocal response_active
+
+            try:
+                async for message in openai_ws:
+                    event = json.loads(message)
+                    event_type = event.get("type", "")
+
+                    print(f"📨 OpenAI event: {event_type}")
+
+                    if event_type == "response.audio.delta":
+                        pcm_data = base64.b64decode(event["delta"])
+                        await websocket.send_bytes(pcm_data)
+                        print(
+                            f"🎵 Sent audio chunk to frontend ({len(pcm_data)} bytes)"
+                        )
+
+                    elif event_type == "response.text.delta":
+                        text_delta = event.get("delta", "")
+                        print(f"📝 Text response: {text_delta}")
+
+                    elif event_type == "response.done":
+                        print("✅ Response completed")
+                        response_active = False
+                        await websocket.send_text("RESPONSE_COMPLETE")
+
+                    elif event_type == "error":
+                        error_msg = event.get("error", {}).get(
+                            "message", "Unknown error"
+                        )
+                        print(f"🔴 OpenAI error: {error_msg}")
+                        response_active = False
+                        await websocket.send_text(f"ERROR: {error_msg}")
+
+            except websockets.exceptions.ConnectionClosed:
+                print("🔴 OpenAI WebSocket closed")
+            except Exception as e:
+                print(f"🔴 Error handling OpenAI responses: {e}")
+
+        await asyncio.gather(
+            handle_client_messages(),
+            handle_openai_responses(),
+            return_exceptions=True,
+        )
+
+    except Exception as e:
+        print(f"💥 Error in streamline: {e}")
+        try:
+            await websocket.send_text(f"ERROR: {str(e)}")
+        except Exception:
+            pass
+    finally:
+        print("🧹 Cleaning up...")
+        if openai_ws:
+            await openai_ws.close()
+            print("✅ OpenAI WebSocket closed")
+        print("🏁 Streamline session ended")
