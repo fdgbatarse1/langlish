@@ -2,12 +2,15 @@ import json
 import base64
 import asyncio
 import io
-from typing import Dict, Any
+import uuid
+from typing import Dict, Any, List
+import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import websockets
 from pydub import AudioSegment
 from src.config import OPENAI_API_KEY
+from src.services.s3_service import s3_service
 
 OPENAI_WS_URL = (
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
@@ -40,6 +43,40 @@ def convert_webm_to_pcm16(webm_data: bytes) -> bytes:
         return b""
 
 
+def convert_pcm16_to_webm(pcm_data: bytes, sample_rate: int = 24000) -> bytes:
+    """
+    Convert PCM16 audio to WebM format.
+
+    Args:
+        pcm_data: Raw PCM16 audio data as bytes
+        sample_rate: Sample rate of the PCM audio (default: 24000)
+
+    Returns:
+        bytes: Converted WebM audio data, or empty bytes if conversion fails
+    """
+    try:
+        print(f"🔄 Converting PCM16 audio ({len(pcm_data)} bytes) to WebM")
+
+        # Create AudioSegment from raw PCM data
+        audio = AudioSegment(
+            pcm_data,
+            sample_width=2,  # 16-bit
+            frame_rate=sample_rate,
+            channels=1  # mono
+        )
+
+        # Export to WebM format in memory
+        buffer = io.BytesIO()
+        audio.export(buffer, format="webm", codec="libopus", bitrate="64k")
+        webm_data = buffer.getvalue()
+
+        print(f"✅ Converted to WebM: {len(webm_data)} bytes")
+        return webm_data
+    except Exception as e:
+        print(f"🔴 Error converting PCM to WebM: {e}")
+        return b""
+
+
 @realtime_router.websocket("/streamline")
 async def streamline(websocket: WebSocket) -> None:
     """
@@ -58,9 +95,17 @@ async def streamline(websocket: WebSocket) -> None:
     await websocket.accept()
     print("✅ WebSocket connection accepted")
 
+    # Generate unique session ID
+    session_id = str(uuid.uuid4())
+    print(f"🆔 Session ID: {session_id}")
+
     openai_ws = None
     audio_buffer_size = 0
     response_active = False
+    
+    # Audio buffers for S3 storage
+    user_audio_buffer: List[bytes] = []
+    assistant_audio_buffer: List[bytes] = []
 
     try:
         print("🔗 Connecting to OpenAI WebSocket...")
@@ -112,7 +157,7 @@ async def streamline(websocket: WebSocket) -> None:
             Returns:
                 None
             """
-            nonlocal audio_buffer_size, response_active
+            nonlocal audio_buffer_size, response_active, user_audio_buffer
 
             try:
                 while True:
@@ -121,6 +166,10 @@ async def streamline(websocket: WebSocket) -> None:
                     if "bytes" in message:
                         webm_data = message["bytes"]
                         audio_buffer_size += len(webm_data)
+                        
+                        # Store original WebM data for S3
+                        user_audio_buffer.append(webm_data)
+                        
                         print(
                             f"📨 Received WebM audio: {len(webm_data)} bytes "
                             f"(total: {audio_buffer_size} bytes)"
@@ -151,6 +200,31 @@ async def streamline(websocket: WebSocket) -> None:
                                     f"🛑 Received EOF with {audio_buffer_size} bytes "
                                     f"of total audio"
                                 )
+
+                                # Save user audio to S3 if available
+                                if user_audio_buffer and s3_service:
+                                    try:
+                                        combined_audio = b"".join(user_audio_buffer)
+                                        s3_url = await asyncio.to_thread(
+                                            s3_service.upload_audio,
+                                            audio_data=combined_audio,
+                                            file_name=f"{session_id}_user.webm",
+                                            content_type="audio/webm",
+                                            metadata={
+                                                "session_id": session_id,
+                                                "audio_type": "user_input",
+                                                "size_bytes": str(len(combined_audio)),
+                                            }
+                                        )
+                                        if s3_url:
+                                            print(f"💾 User audio saved to S3: {s3_url}")
+                                        else:
+                                            print("⚠️ Failed to save user audio to S3")
+                                    except Exception as e:
+                                        print(f"🔴 Error saving user audio to S3: {e}")
+                                
+                                # Clear user audio buffer
+                                user_audio_buffer = []
 
                                 if audio_buffer_size > 5000:
                                     response_active = True
@@ -194,7 +268,7 @@ async def streamline(websocket: WebSocket) -> None:
             Returns:
                 None
             """
-            nonlocal response_active
+            nonlocal response_active, assistant_audio_buffer
 
             try:
                 async for message in openai_ws:
@@ -205,6 +279,10 @@ async def streamline(websocket: WebSocket) -> None:
 
                     if event_type == "response.audio.delta":
                         pcm_data = base64.b64decode(event["delta"])
+                        
+                        # Store assistant audio for S3
+                        assistant_audio_buffer.append(pcm_data)
+                        
                         await websocket.send_bytes(pcm_data)
                         print(
                             f"🎵 Sent audio chunk to frontend ({len(pcm_data)} bytes)"
@@ -217,6 +295,41 @@ async def streamline(websocket: WebSocket) -> None:
                     elif event_type == "response.done":
                         print("✅ Response completed")
                         response_active = False
+                        
+                        # Save assistant audio to S3 if available
+                        if assistant_audio_buffer and s3_service:
+                            try:
+                                # Combine PCM chunks
+                                combined_pcm = b"".join(assistant_audio_buffer)
+                                
+                                # Convert PCM to WebM
+                                webm_data = convert_pcm16_to_webm(combined_pcm)
+                                
+                                if webm_data:
+                                    s3_url = await asyncio.to_thread(
+                                        s3_service.upload_audio,
+                                        audio_data=webm_data,
+                                        file_name=f"{session_id}_assistant.webm",
+                                        content_type="audio/webm",
+                                        metadata={
+                                            "session_id": session_id,
+                                            "audio_type": "assistant_response",
+                                            "size_bytes": str(len(webm_data)),
+                                            "original_pcm_size": str(len(combined_pcm)),
+                                        }
+                                    )
+                                    if s3_url:
+                                        print(f"💾 Assistant audio saved to S3: {s3_url}")
+                                    else:
+                                        print("⚠️ Failed to save assistant audio to S3")
+                                else:
+                                    print("⚠️ Failed to convert assistant audio to WebM")
+                            except Exception as e:
+                                print(f"🔴 Error saving assistant audio to S3: {e}")
+                        
+                        # Clear assistant audio buffer
+                        assistant_audio_buffer = []
+                        
                         await websocket.send_text("RESPONSE_COMPLETE")
 
                     elif event_type == "error":

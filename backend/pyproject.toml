@@ -8,6 +8,7 @@ dependencies = [
     "fastapi[standard]>=0.115.12",
     "pydub>=0.25.1",
     "websockets>=12.0",
+    "boto3>=1.35.0",
 ]
 
 [project.optional-dependencies]

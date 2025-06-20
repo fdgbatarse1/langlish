@@ -13,6 +13,7 @@ Langlish is a real-time English learning voice assistant that uses OpenAI's spee
 - Natural voice interaction with audio processing
 - Modern web interface with React and TypeScript
 - FastAPI backend with WebSocket support
+- **AWS S3 integration for audio storage** - Save and archive conversation audio files
 
 ## Prerequisites
 
@@ -21,6 +22,7 @@ Langlish is a real-time English learning voice assistant that uses OpenAI's spee
 - npm or pnpm package manager
 - [uv](https://github.com/astral-sh/uv) package manager (recommended for backend)
 - OpenAI API key with Real-time API access
+- AWS account (optional, for audio storage)
 
 ## Installation
 
@@ -49,9 +51,17 @@ uv pip install -e .
 4. Set up environment variables:
 
 ```bash
-cp .env.example .env
-# Edit .env and add your OpenAI API key
+# Create .env file from example
+echo "OPENAI_API_KEY=your_openai_api_key_here" > .env
+
+# For AWS S3 audio storage (optional):
+echo "AWS_ACCESS_KEY_ID=your_aws_access_key_id_here" >> .env
+echo "AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key_here" >> .env
+echo "AWS_S3_BUCKET_NAME=your_s3_bucket_name_here" >> .env
+echo "AWS_S3_REGION=us-east-1" >> .env
 ```
+
+For detailed AWS S3 setup instructions, see [backend/AWS_S3_SETUP.md](backend/AWS_S3_SETUP.md).
 
 ### Frontend Setup
 
