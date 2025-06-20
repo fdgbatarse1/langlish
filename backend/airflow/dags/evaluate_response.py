@@ -1,5 +1,6 @@
 import openai
 import csv
+from src.services.s3_service import s3_service
 
 def run_gpt(prompt: str) -> str:
     response = openai.ChatCompletion.create(
@@ -83,8 +84,15 @@ def run_evaluation():
             "justification": result["justification"]
         })
 
-    with open("/tmp/evaluation_results.csv", "w", newline="") as csvfile:
-        fieldnames = ["student_message", "model_response", "score", "justification"]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(results)
+    with open("/tmp/evaluation_results.csv", "rb") as f:
+        csv_bytes = f.read()
+
+    s3_url = s3_service.upload_audio(
+        audio_data=csv_bytes,
+        file_name="evaluation_results.csv",
+        content_type="text/csv",
+        metadata={"type": "evaluation", "source": "auto-grader"}
+    )
+
+    print(f"✅ Uploaded to S3: {s3_url}")
+
