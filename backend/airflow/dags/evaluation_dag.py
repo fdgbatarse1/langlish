@@ -2,11 +2,17 @@ from airflow.models import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
 from evaluate_response import run_evaluation
+from src.services.s3_service import s3_service
 import csv
 
 def print_results():
-    with open("/tmp/evaluation_results.csv", "r") as f:
-        print(f.read())
+    s3_key = "evaluation_results.csv"
+    file_bytes = s3_service.download_file(s3_key)
+    if file_bytes:
+        print(file_bytes.decode("utf-8"))
+    else:
+        print(f"Failed to read {s3_key} from S3")
+
 
 default_args = {
     "start_date": datetime(2025, 6, 19),

@@ -84,7 +84,15 @@ def run_evaluation():
             "justification": result["justification"]
         })
 
-    with open("/tmp/evaluation_results.csv", "rb") as f:
+    csv_path = "/tmp/evaluation_results.csv"
+    with open(csv_path, "w", newline="") as csvfile:
+        fieldnames = ["student_message", "model_response", "score", "justification"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(results)
+
+    # Read CSV bytes and upload to S3
+    with open(csv_path, "rb") as f:
         csv_bytes = f.read()
 
     s3_url = s3_service.upload_audio(
