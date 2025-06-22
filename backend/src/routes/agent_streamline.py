@@ -10,6 +10,11 @@ from src.config import OPENAI_API_KEY
 from src.services.s3_service import s3_service
 from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm
 
+# LangGraph imports
+from langgraph.graph import StateGraph, END
+from typing_extensions import TypedDict
+from typing import Annotated
+
 OPENAI_WS_URL = (
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
 )
@@ -17,36 +22,48 @@ OPENAI_WS_URL = (
 agent_realtime_router = APIRouter()
 
 
-@agent_realtime_router.websocket("/agent-streamline")
-async def agent_streamline(websocket: WebSocket) -> None:
+# LangGraph State Definition
+class ConversationState(TypedDict):
+    """State for the conversation workflow"""
+    websocket: WebSocket
+    session_id: str
+    openai_ws: Any
+    audio_buffer_size: int
+    response_active: bool
+    user_audio_buffer: List[bytes]
+    assistant_audio_buffer: List[bytes]
+    completed: bool
+
+
+# Create the LangGraph workflow
+def create_langlish_workflow():
+    """Create the LangGraph workflow for Langlish agent"""
+    workflow = StateGraph(ConversationState)
+    
+    # Add the langlish node
+    workflow.add_node("langlish", langlish_node)
+    
+    # Define the flow: START -> langlish -> END
+    workflow.set_entry_point("langlish")
+    workflow.add_edge("langlish", END)
+    
+    return workflow.compile()
+
+
+async def langlish_node(state: ConversationState) -> ConversationState:
     """
-    WebSocket endpoint for real-time audio streaming with OpenAI.
-
-    Handles bidirectional audio streaming between client and OpenAI's real-time API,
-    including audio conversion, session management, and response handling.
-
-    Args:
-        websocket: FastAPI WebSocket connection object
-
-    Returns:
-        None
+    Langlish node that manages the OpenAI Realtime WebSocket connection.
+    This node encapsulates the existing OpenAI Realtime logic.
     """
-    print("🔌 WebSocket connection request received")
-    await websocket.accept()
-    print("✅ WebSocket connection accepted")
-
-    # Generate unique session ID
-    session_id = str(uuid.uuid4())
-    print(f"🆔 Session ID: {session_id}")
-
+    websocket = state["websocket"]
+    session_id = state["session_id"]
+    
     openai_ws = None
-    audio_buffer_size = 0
-    response_active = False
-
-    # Audio buffers for S3 storage
-    user_audio_buffer: List[bytes] = []
-    assistant_audio_buffer: List[bytes] = []
-
+    audio_buffer_size = state["audio_buffer_size"]
+    response_active = state["response_active"]
+    user_audio_buffer = state["user_audio_buffer"]
+    assistant_audio_buffer = state["assistant_audio_buffer"]
+    
     try:
         print("🔗 Connecting to OpenAI WebSocket...")
         openai_ws = await websockets.connect(
@@ -296,14 +313,73 @@ async def agent_streamline(websocket: WebSocket) -> None:
         )
 
     except Exception as e:
-        print(f"💥 Error in streamline: {e}")
+        print(f"💥 Error in langlish node: {e}")
+        raise e
+    finally:
+        if openai_ws:
+            await openai_ws.close()
+            print("✅ OpenAI WebSocket closed")
+    
+    # Update state before returning
+    state["completed"] = True
+    state["openai_ws"] = openai_ws
+    state["audio_buffer_size"] = audio_buffer_size
+    state["response_active"] = response_active
+    state["user_audio_buffer"] = user_audio_buffer
+    state["assistant_audio_buffer"] = assistant_audio_buffer
+    
+    return state
+
+
+@agent_realtime_router.websocket("/agent-streamline")
+async def agent_streamline(websocket: WebSocket) -> None:
+    """
+    WebSocket endpoint for real-time audio streaming with OpenAI using LangGraph.
+
+    This endpoint now uses LangGraph to orchestrate the conversation workflow
+    while maintaining the same WebSocket interface with the frontend.
+
+    Args:
+        websocket: FastAPI WebSocket connection object
+
+    Returns:
+        None
+    """
+    print("🔌 WebSocket connection request received")
+    await websocket.accept()
+    print("✅ WebSocket connection accepted")
+
+    # Generate unique session ID
+    session_id = str(uuid.uuid4())
+    print(f"🆔 Session ID: {session_id}")
+
+    # Create the LangGraph workflow
+    workflow = create_langlish_workflow()
+    
+    # Initialize the conversation state
+    initial_state = ConversationState(
+        websocket=websocket,
+        session_id=session_id,
+        openai_ws=None,
+        audio_buffer_size=0,
+        response_active=False,
+        user_audio_buffer=[],
+        assistant_audio_buffer=[],
+        completed=False
+    )
+    
+    try:
+        # Execute the workflow
+        print("🚀 Starting LangGraph workflow...")
+        final_state = await workflow.ainvoke(initial_state)
+        print("✅ LangGraph workflow completed")
+        
+    except Exception as e:
+        print(f"💥 Error in LangGraph workflow: {e}")
         try:
             await websocket.send_text(f"ERROR: {str(e)}")
         except Exception:
             pass
     finally:
         print("🧹 Cleaning up...")
-        if openai_ws:
-            await openai_ws.close()
-            print("✅ OpenAI WebSocket closed")
         print("🏁 Streamline session ended")
