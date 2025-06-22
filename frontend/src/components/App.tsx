@@ -2,7 +2,7 @@ import { Mic } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import useWebSocket, { ReadyState } from 'react-use-websocket'
 
-const socketUrl = 'ws://localhost:8000/streamline'
+const socketUrl = 'ws://localhost:8000/agent-streamline'
 
 const App = () => {
   const [recording, setRecording] = useState(false)
