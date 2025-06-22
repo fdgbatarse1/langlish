@@ -12,6 +12,10 @@ from pydub import AudioSegment
 from src.config import OPENAI_API_KEY
 from src.services.s3_service import s3_service
 
+from src.mlflow_config import setup_mlflow
+from src.routes.prompt_tracker import log_prompt_version
+
+
 OPENAI_WS_URL = (
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
 )
@@ -107,6 +111,9 @@ async def streamline(websocket: WebSocket) -> None:
     user_audio_buffer: List[bytes] = []
     assistant_audio_buffer: List[bytes] = []
 
+    # Text buffer for S3
+    assistant_text_buffer: List[str] = []
+
     try:
         print("🔗 Connecting to OpenAI WebSocket...")
         openai_ws = await websockets.connect(
@@ -145,6 +152,9 @@ async def streamline(websocket: WebSocket) -> None:
         }
         await openai_ws.send(json.dumps(session_config))
         print("✅ Session configuration sent")
+
+        setup_mlflow()
+        log_prompt_version(session_config=session_config, session_id=session_id)
 
         async def handle_client_messages() -> None:
             """
@@ -185,7 +195,7 @@ async def streamline(websocket: WebSocket) -> None:
                                         "type": "input_audio_buffer.append",
                                         "audio": audio_b64,
                                     }
-                                )
+                                )                
                             )
                             print(
                                 f"📤 Sent PCM16 audio to OpenAI ({len(pcm_data)} bytes)"
@@ -193,9 +203,11 @@ async def streamline(websocket: WebSocket) -> None:
                         else:
                             print("🔴 Audio conversion failed, skipping chunk")
                     elif "text" in message:
+                        print(f"Received text message from client: {message['text']}")
                         try:
                             data = json.loads(message["text"])
                             if data.get("type") == "EOF" and not response_active:
+
                                 print(
                                     f"🛑 Received EOF with {audio_buffer_size} bytes "
                                     f"of total audio"
@@ -288,14 +300,36 @@ async def streamline(websocket: WebSocket) -> None:
                             f"🎵 Sent audio chunk to frontend ({len(pcm_data)} bytes)"
                         )
 
-                    elif event_type == "response.text.delta":
+                    elif event_type == "response.audio_transcript.delta":
                         text_delta = event.get("delta", "")
-                        print(f"📝 Text response: {text_delta}")
+                        print(f"Received assistant audio_transcript delta: {text_delta}") 
+                        if text_delta:
+                            assistant_text_buffer.append(text_delta)
+                            print(f"📝 Text response: {text_delta}")
 
                     elif event_type == "response.done":
                         print("✅ Response completed")
                         response_active = False
-                        
+
+                        assistant_responses = {
+                            "session_id": session_id,
+                            "assistant": " ".join(assistant_text_buffer),
+                        }
+
+                        print("📝 Full conversation:")
+                        print(json.dumps(assistant_responses, indent=2))
+
+                        await asyncio.to_thread(
+                            s3_service.upload_text,
+                            json.dumps(assistant_responses, ensure_ascii=False, indent=2), 
+                            f"{session_id}_conversation.json",                             
+                            "application/json",                                          
+                            {
+                                "session_id": session_id,
+                                "type": "conversation_log"
+                            }                                                             
+                        )
+                                                
                         # Save assistant audio to S3 if available
                         if assistant_audio_buffer and s3_service:
                             try:

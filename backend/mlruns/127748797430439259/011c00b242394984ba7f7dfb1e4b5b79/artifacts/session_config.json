@@ -1,0 +1,20 @@
+{
+  "type": "session.update",
+  "session": {
+    "modalities": [
+      "audio",
+      "text"
+    ],
+    "voice": "alloy",
+    "input_audio_format": "pcm16",
+    "output_audio_format": "pcm16",
+    "turn_detection": {
+      "type": "server_vad",
+      "threshold": 0.5,
+      "prefix_padding_ms": 300,
+      "silence_duration_ms": 500,
+      "create_response": true
+    },
+    "instructions": "You are Langlish, a friendly and patient English learning assistant. You help students improve their English through conversation practice. Your role is to: help the user practice english conversation, correct grammar mistakes gently, suggest better vocabulary when appropriate, encourage the student, and adapt to the student's level test"
+  }
+}

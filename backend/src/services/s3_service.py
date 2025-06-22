@@ -138,6 +138,58 @@ class S3Service:
             content_type="audio/pcm",
             metadata=metadata,
         )
+    
+    def upload_text(
+        self,
+        text_data: str,
+        file_name: str,
+        content_type: str = "application/json",
+        metadata: Optional[Dict[str, str]] = None,
+    ) -> Optional[str]:
+        """
+        Upload text (e.g., JSON) data to S3.
+
+        Args:
+            text_data: Text content to upload
+            file_name: Desired filename in S3
+            content_type: MIME type (default: application/json)
+            metadata: Optional metadata dictionary
+
+        Returns:
+            str: S3 URL of the uploaded file, or None if upload fails
+        """
+        try:
+            # Add timestamp to filename
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            s3_key = f"conversations/{timestamp}_{file_name}"
+
+            # Prepare metadata
+            if metadata is None:
+                metadata = {}
+            metadata["upload_timestamp"] = datetime.utcnow().isoformat()
+
+            # Upload to S3
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=s3_key,
+                Body=text_data.encode("utf-8"),
+                ContentType=content_type,
+                Metadata=metadata,
+            )
+
+            # Generate URL
+            s3_url = f"https://{self.bucket_name}.s3.{AWS_S3_REGION}.amazonaws.com/{s3_key}"
+            logger.info(f"✅ Text uploaded successfully to S3: {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.error(f"🔴 AWS S3 client error: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"🔴 Unexpected error uploading text to S3: {e}")
+            return None
+    
+
 
 
 # Create a singleton instance
