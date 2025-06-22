@@ -329,6 +329,8 @@ async def streamline(websocket: WebSocket) -> None:
                                 "type": "conversation_log"
                             }                                                             
                         )
+                        #clear
+                        assistant_text_buffer = []
                                                 
                         # Save assistant audio to S3 if available
                         if assistant_audio_buffer and s3_service:
