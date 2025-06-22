@@ -4,7 +4,6 @@ import asyncio
 import io
 import uuid
 from typing import Dict, Any, List
-import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import websockets
