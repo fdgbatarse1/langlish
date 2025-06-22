@@ -14,7 +14,8 @@ async def upload_audio(file: UploadFile = File(...)):
         directory = "./storage/audios"
         os.makedirs(directory, exist_ok=True)
 
-        name, ext = os.path.splitext(file.filename)
+        filename = file.filename or "unknown"
+        name, ext = os.path.splitext(filename)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_filename = f"{name}_{timestamp}{ext}"
 
