@@ -1,10 +1,14 @@
-import openai
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from openai import OpenAI
 from src.config import OPENAI_API_KEY
 
-openai.api_key = OPENAI_API_KEY
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 def run_gpt(prompt: str) -> str:
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are an expert grader."},
@@ -13,7 +17,6 @@ def run_gpt(prompt: str) -> str:
         temperature=0
     )
     return response.choices[0].message.content
-
 
 def evaluate_response(student_message: str, model_response: str) -> dict:
     score_rubric = """

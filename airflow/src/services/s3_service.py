@@ -188,6 +188,60 @@ class S3Service:
         except Exception as e:
             logger.error(f"🔴 Unexpected error uploading text to S3: {e}")
             return None
+        
+    def upload_evaluation(
+        self,
+        evaluation_data: str,
+        file_name: str = "evaluation_results.csv",
+        content_type: str = "text/csv",
+        metadata: Optional[Dict[str, str]] = None,
+    ) -> Optional[str]:
+        """
+        Upload evaluation data to S3.
+
+        Args:
+            evaluation_data: CSV content or evaluation text to upload
+            file_name: Desired filename in S3 (default: evaluation_results.csv)
+            content_type: MIME type (default: text/csv)
+            metadata: Optional metadata dictionary
+
+        Returns:
+            str: S3 URL of the uploaded file, or None if upload fails
+        """
+        try:
+            # Add timestamp to filename for evaluations
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            s3_key = f"evaluations/{timestamp}_{file_name}"
+
+            # Prepare evaluation-specific metadata
+            if metadata is None:
+                metadata = {}
+            metadata.update({
+                "upload_timestamp": datetime.utcnow().isoformat(),
+                "data_type": "evaluation",
+                "file_type": "csv" if content_type == "text/csv" else "text"
+            })
+
+            # Upload to S3
+            self.s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=s3_key,
+                Body=evaluation_data.encode("utf-8"),
+                ContentType=content_type,
+                Metadata=metadata,
+            )
+
+            # Generate URL
+            s3_url = f"https://{self.bucket_name}.s3.{AWS_S3_REGION}.amazonaws.com/{s3_key}"
+            logger.info(f"✅ Evaluation data uploaded successfully to S3: {s3_url}")
+            return s3_url
+
+        except ClientError as e:
+            logger.error(f"🔴 AWS S3 client error during evaluation upload: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"🔴 Unexpected error uploading evaluation to S3: {e}")
+            return None
     
 
 
