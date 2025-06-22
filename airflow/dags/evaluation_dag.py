@@ -3,7 +3,26 @@ from airflow.operators.python import PythonOperator
 from datetime import datetime
 from evaluate_response import evaluate_response
 from src.services.s3_service import s3_service
-import csv
+
+def run_evaluation_task():
+    # Example input
+    student_message = "I don't speak English good."
+    model_response = "That's okay! Let's improve together."
+
+    result = evaluate_response(student_message, model_response)
+
+    csv_line = f"{datetime.utcnow().isoformat()},{result['score']},{result['justification']}\n"
+
+    s3_service.upload_text(
+        text_data=csv_line,
+        file_name="evaluation_results.csv",
+        content_type="text/csv",
+        metadata={"type": "evaluation"}
+    )
+
+def dummy_task():
+    print("Hello from Airflow!")
+
 
 def print_results():
     s3_key = "evaluation_results.csv"
@@ -20,7 +39,8 @@ default_args = {
 }
 
 dag = DAG(
-    dag_id="gpt_evaluation_dag",
+    dag_id="evaluation_dag",
+    default_args=default_args,
     schedule=None,
     catchup=False,
     tags=["evaluation"]
@@ -28,7 +48,7 @@ dag = DAG(
 
 task_eval = PythonOperator(
     task_id="run_evaluation",
-    python_callable=evaluate_response,
+    python_callable=run_evaluation_task,
     dag=dag
 )
 
@@ -37,5 +57,9 @@ task_print = PythonOperator(
     python_callable=print_results,
     dag=dag
 )
+task = PythonOperator(
+    task_id="dummy_task",
+    python_callable=dummy_task
+)
 
-task_eval >> task_print
+task >> task_eval >> task_print

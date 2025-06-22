@@ -1,9 +1,4 @@
 import openai
-import csv
-import io
-import mlflow
-from src.services.s3_service import s3_service
-from src.mlflow_config import setup_mlflow
 from src.config import OPENAI_API_KEY
 
 openai.api_key = OPENAI_API_KEY
