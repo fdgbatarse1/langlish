@@ -61,7 +61,7 @@ def convert_pcm16_to_webm(pcm_data: bytes, sample_rate: int = 24000) -> bytes:
             pcm_data,
             sample_width=2,  # 16-bit
             frame_rate=sample_rate,
-            channels=1  # mono
+            channels=1,  # mono
         )
 
         # Export to WebM format in memory
@@ -101,7 +101,7 @@ async def streamline(websocket: WebSocket) -> None:
     openai_ws = None
     audio_buffer_size = 0
     response_active = False
-    
+
     # Audio buffers for S3 storage
     user_audio_buffer: List[bytes] = []
     assistant_audio_buffer: List[bytes] = []
@@ -165,10 +165,10 @@ async def streamline(websocket: WebSocket) -> None:
                     if "bytes" in message:
                         webm_data = message["bytes"]
                         audio_buffer_size += len(webm_data)
-                        
+
                         # Store original WebM data for S3
                         user_audio_buffer.append(webm_data)
-                        
+
                         print(
                             f"📨 Received WebM audio: {len(webm_data)} bytes "
                             f"(total: {audio_buffer_size} bytes)"
@@ -213,15 +213,17 @@ async def streamline(websocket: WebSocket) -> None:
                                                 "session_id": session_id,
                                                 "audio_type": "user_input",
                                                 "size_bytes": str(len(combined_audio)),
-                                            }
+                                            },
                                         )
                                         if s3_url:
-                                            print(f"💾 User audio saved to S3: {s3_url}")
+                                            print(
+                                                f"💾 User audio saved to S3: {s3_url}"
+                                            )
                                         else:
                                             print("⚠️ Failed to save user audio to S3")
                                     except Exception as e:
                                         print(f"🔴 Error saving user audio to S3: {e}")
-                                
+
                                 # Clear user audio buffer
                                 user_audio_buffer = []
 
@@ -278,10 +280,10 @@ async def streamline(websocket: WebSocket) -> None:
 
                     if event_type == "response.audio.delta":
                         pcm_data = base64.b64decode(event["delta"])
-                        
+
                         # Store assistant audio for S3
                         assistant_audio_buffer.append(pcm_data)
-                        
+
                         await websocket.send_bytes(pcm_data)
                         print(
                             f"🎵 Sent audio chunk to frontend ({len(pcm_data)} bytes)"
@@ -294,16 +296,16 @@ async def streamline(websocket: WebSocket) -> None:
                     elif event_type == "response.done":
                         print("✅ Response completed")
                         response_active = False
-                        
+
                         # Save assistant audio to S3 if available
                         if assistant_audio_buffer and s3_service:
                             try:
                                 # Combine PCM chunks
                                 combined_pcm = b"".join(assistant_audio_buffer)
-                                
+
                                 # Convert PCM to WebM
                                 webm_data = convert_pcm16_to_webm(combined_pcm)
-                                
+
                                 if webm_data:
                                     s3_url = await asyncio.to_thread(
                                         s3_service.upload_audio,
@@ -315,20 +317,22 @@ async def streamline(websocket: WebSocket) -> None:
                                             "audio_type": "assistant_response",
                                             "size_bytes": str(len(webm_data)),
                                             "original_pcm_size": str(len(combined_pcm)),
-                                        }
+                                        },
                                     )
                                     if s3_url:
-                                        print(f"💾 Assistant audio saved to S3: {s3_url}")
+                                        print(
+                                            f"💾 Assistant audio saved to S3: {s3_url}"
+                                        )
                                     else:
                                         print("⚠️ Failed to save assistant audio to S3")
                                 else:
                                     print("⚠️ Failed to convert assistant audio to WebM")
                             except Exception as e:
                                 print(f"🔴 Error saving assistant audio to S3: {e}")
-                        
+
                         # Clear assistant audio buffer
                         assistant_audio_buffer = []
-                        
+
                         await websocket.send_text("RESPONSE_COMPLETE")
 
                     elif event_type == "error":

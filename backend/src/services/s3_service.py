@@ -27,8 +27,10 @@ class S3Service:
             if not AWS_ACCESS_KEY_ID:
                 raise ValueError("AWS_ACCESS_KEY_ID environment variable is required")
             if not AWS_SECRET_ACCESS_KEY:
-                raise ValueError("AWS_SECRET_ACCESS_KEY environment variable is required")
-            
+                raise ValueError(
+                    "AWS_SECRET_ACCESS_KEY environment variable is required"
+                )
+
             self.s3_client = boto3.client(
                 "s3",
                 aws_access_key_id=AWS_ACCESS_KEY_ID,
@@ -79,7 +81,9 @@ class S3Service:
                 Metadata=metadata,
             )
 
-            s3_url = f"https://{self.bucket_name}.s3.{AWS_S3_REGION}.amazonaws.com/{s3_key}"
+            s3_url = (
+                f"https://{self.bucket_name}.s3.{AWS_S3_REGION}.amazonaws.com/{s3_key}"
+            )
             logger.info(f"✅ Audio uploaded successfully to S3: {s3_url}")
             return s3_url
 
@@ -143,4 +147,4 @@ class S3Service:
         )
 
 
-s3_service = S3Service() if AWS_S3_BUCKET_NAME else None 
+s3_service = S3Service() if AWS_S3_BUCKET_NAME else None
