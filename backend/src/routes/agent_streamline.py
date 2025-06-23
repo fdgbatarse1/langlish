@@ -173,7 +173,10 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                     "information, explain it in a clear and educational way. "
                     "IMPORTANT: When a user asks for the definition, meaning, or explanation "
                     "of a word, always use the get_dictionary_definition function to look it up "
-                    "before providing your explanation."
+                    "before providing your explanation. CRITICAL: Listen very carefully to identify "
+                    "the EXACT word the user is asking about - it's usually the last significant noun "
+                    "after phrases like 'definition of', 'meaning of', or 'what is'. If unsure, "
+                    "repeat back what word you're about to look up to confirm."
                 ),
                 "tools": [
                     {
