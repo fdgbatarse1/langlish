@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from src.models.greeting_response import GreetingResponse
+from src.routes.agent_streamline import agent_realtime_router
 from src.routes.streamline import realtime_router
 
 app = FastAPI(
@@ -9,6 +10,7 @@ app = FastAPI(
 )
 
 app.include_router(realtime_router)
+app.include_router(agent_realtime_router)
 
 
 @app.get("/", response_model=GreetingResponse)

@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
 
@@ -22,13 +22,22 @@ class S3Service:
     def __init__(self) -> None:
         """Initialize S3 client with credentials from config."""
         try:
+            if not AWS_S3_BUCKET_NAME:
+                raise ValueError("AWS_S3_BUCKET_NAME environment variable is required")
+            if not AWS_ACCESS_KEY_ID:
+                raise ValueError("AWS_ACCESS_KEY_ID environment variable is required")
+            if not AWS_SECRET_ACCESS_KEY:
+                raise ValueError(
+                    "AWS_SECRET_ACCESS_KEY environment variable is required"
+                )
+
             self.s3_client = boto3.client(
                 "s3",
                 aws_access_key_id=AWS_ACCESS_KEY_ID,
                 aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
                 region_name=AWS_S3_REGION,
             )
-            self.bucket_name = AWS_S3_BUCKET_NAME
+            self.bucket_name: str = AWS_S3_BUCKET_NAME
             logger.info(f"✅ S3 client initialized for bucket: {self.bucket_name}")
         except NoCredentialsError:
             logger.error("🔴 AWS credentials not found in configuration")
@@ -57,16 +66,13 @@ class S3Service:
             str: S3 URL of the uploaded file, or None if upload fails
         """
         try:
-            # Add timestamp to filename to ensure uniqueness
             timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
             s3_key = f"audio/{timestamp}_{file_name}"
 
-            # Prepare metadata
             if metadata is None:
                 metadata = {}
             metadata["upload_timestamp"] = datetime.utcnow().isoformat()
 
-            # Upload to S3
             self.s3_client.put_object(
                 Bucket=self.bucket_name,
                 Key=s3_key,
@@ -75,8 +81,9 @@ class S3Service:
                 Metadata=metadata,
             )
 
-            # Generate URL
-            s3_url = f"https://{self.bucket_name}.s3.{AWS_S3_REGION}.amazonaws.com/{s3_key}"
+            s3_url = (
+                f"https://{self.bucket_name}.s3.{AWS_S3_REGION}.amazonaws.com/{s3_key}"
+            )
             logger.info(f"✅ Audio uploaded successfully to S3: {s3_url}")
             return s3_url
 
@@ -192,5 +199,4 @@ class S3Service:
 
 
 
-# Create a singleton instance
-s3_service = S3Service() if AWS_S3_BUCKET_NAME else None 
+s3_service = S3Service() if AWS_S3_BUCKET_NAME else None
