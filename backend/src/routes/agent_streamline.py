@@ -14,7 +14,6 @@ from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm
 # LangGraph imports
 from langgraph.graph import StateGraph, END
 from typing_extensions import TypedDict
-from typing import Annotated
 
 OPENAI_WS_URL = (
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
@@ -43,7 +42,7 @@ async def fetch_dictionary_definition(word: str) -> Dict[str, Any]:
                 print(f"📡 Dictionary API response status: {response.status}")
                 if response.status == 200:
                     data = await response.json()
-                    print(f"📥 Raw API response: {json.dumps(data, indent=2)}")
+                    print("📥 Raw API response: {json.dumps(data, indent=2)}")
                     if data and len(data) > 0:
                         entry = data[0]
                         # Extract key information
@@ -393,7 +392,7 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                                     definition_data = await fetch_dictionary_definition(word)
                                     
                                     # Log the actual API response
-                                    print(f"📊 Dictionary API returned:")
+                                    print("📊 Dictionary API returned:")
                                     print(f"   Found: {definition_data.get('found')}")
                                     print(f"   Word: {definition_data.get('word')}")
                                     print(f"   Definition: {definition_data.get('definition', 'N/A')}")
@@ -460,13 +459,13 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                             print(f"   Function: {item.get('name')}, Call ID: {item.get('call_id')}")
                             print(f"   Arguments: {item.get('arguments')}")
                         elif item.get("type") == "function_call_output":
-                            print(f"   ✅ Function output acknowledged by OpenAI")
+                            print("   ✅ Function output acknowledged by OpenAI")
                             print(f"   Call ID: {item.get('call_id')}")
                             # Try to parse and display the output
                             try:
                                 output = json.loads(item.get("output", "{}"))
                                 print(f"   Output data: {json.dumps(output, indent=2)}")
-                            except:
+                            except json.JSONDecodeError:
                                 print(f"   Raw output: {item.get('output')}")
                         elif item.get("type") == "message" and item.get("role") == "assistant":
                             # Assistant is generating a response
@@ -602,7 +601,7 @@ async def agent_streamline(websocket: WebSocket) -> None:
     try:
         # Execute the workflow
         print("🚀 Starting LangGraph workflow...")
-        final_state = await workflow.ainvoke(initial_state)
+        await workflow.ainvoke(initial_state)
         print("✅ LangGraph workflow completed")
         
     except Exception as e:
