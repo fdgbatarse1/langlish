@@ -77,6 +77,10 @@ async def fetch_dictionary_definition(word: str) -> Dict[str, Any]:
                             "example": example,
                             "audio_url": audio_url
                         }
+                    else:
+                        # No data returned even though status is 200
+                        print(f"⚠️ No data returned for word: {word}")
+                        return {"found": False, "word": word, "error": "No data returned"}
                 else:
                     print(f"❌ Word '{word}' not found in dictionary")
                     return {"found": False, "word": word, "error": "Word not found"}
