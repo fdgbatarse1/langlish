@@ -1,0 +1,14 @@
+artifact_uri: file:///Users/plinphon/HSclasses/M12_MLOps/project/Langlish/backend/mlruns/127748797430439259/d62b7e2c9a654951b853bd0a3d5127d9/artifacts
+end_time: 1750604589627
+entry_point_name: ''
+experiment_id: '127748797430439259'
+lifecycle_stage: active
+run_id: d62b7e2c9a654951b853bd0a3d5127d9
+run_name: session_eb2019cb-c4de-475a-adf0-306b815988bb
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1750604589618
+status: 3
+tags: []
+user_id: plinphon
