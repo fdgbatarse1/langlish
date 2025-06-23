@@ -222,7 +222,7 @@ async def streamline(websocket: WebSocket) -> None:
             Returns:
                 None
             """
-            nonlocal response_active, assistant_audio_buffer
+            nonlocal response_active, assistant_audio_buffer, assistant_text_buffer
 
             try:
                 async for message in openai_ws:
