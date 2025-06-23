@@ -43,6 +43,7 @@ async def fetch_dictionary_definition(word: str) -> Dict[str, Any]:
                 print(f"📡 Dictionary API response status: {response.status}")
                 if response.status == 200:
                     data = await response.json()
+                    print(f"📥 Raw API response: {json.dumps(data, indent=2)}")
                     if data and len(data) > 0:
                         entry = data[0]
                         # Extract key information
@@ -53,9 +54,13 @@ async def fetch_dictionary_definition(word: str) -> Dict[str, Any]:
                         definition = ""
                         example = ""
                         if meanings:
-                            if meanings[0].get("definitions"):
-                                definition = meanings[0]["definitions"][0].get("definition", "")
-                                example = meanings[0]["definitions"][0].get("example", "")
+                            # Each meaning has multiple definitions
+                            for meaning in meanings:
+                                definitions = meaning.get("definitions", [])
+                                if definitions and not definition:  # Get the first available definition
+                                    definition = definitions[0].get("definition", "")
+                                    example = definitions[0].get("example", "")
+                                    break  # Stop after finding the first definition
                         
                         # Get audio URL if available
                         audio_url = ""
@@ -165,8 +170,29 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                     "english conversation, correct grammar mistakes gently, suggest "
                     "better vocabulary when appropriate, encourage the student, and "
                     "adapt to the student's level. When you receive dictionary "
-                    "information, explain it in a clear and educational way."
+                    "information, explain it in a clear and educational way. "
+                    "IMPORTANT: When a user asks for the definition, meaning, or explanation "
+                    "of a word, always use the get_dictionary_definition function to look it up "
+                    "before providing your explanation."
                 ),
+                "tools": [
+                    {
+                        "type": "function",
+                        "name": "get_dictionary_definition",
+                        "description": "Get the dictionary definition of any English word when the user asks for its meaning, definition, or wants to understand what a word means",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "word": {
+                                    "type": "string",
+                                    "description": "The English word to look up (e.g., 'computer', 'desk', 'happiness')"
+                                }
+                            },
+                            "required": ["word"]
+                        }
+                    }
+                ],
+                "tool_choice": "auto"
             },
         }
         await openai_ws.send(json.dumps(session_config))
@@ -320,77 +346,131 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                         text_delta = event.get("delta", "")
                         print(f"📝 Text response: {text_delta}")
                     
+                    elif event_type == "response.audio_transcript.delta":
+                        # Log what the assistant is saying
+                        transcript_delta = event.get("delta", "")
+                        print(f"🗣️ Assistant saying: {transcript_delta}")
+                    
+                    elif event_type == "response.audio_transcript.done":
+                        # Log the complete transcript of what the assistant said
+                        full_transcript = event.get("transcript", "")
+                        print(f"🗣️ Assistant complete response: {full_transcript}")
+                    
+                    elif event_type == "response.output_item.added":
+                        # Log when a new output item is added
+                        item = event.get("item", {})
+                        print(f"📋 Output item added: type={item.get('type')}, status={item.get('status')}")
+                        if item.get("type") == "function_call":
+                            print(f"🔧 Function call detected: {item.get('name')}")
+                    
+                    elif event_type == "response.function_call_arguments.delta":
+                        # Log streaming function arguments
+                        delta = event.get("delta", "")
+                        print(f"🔧 Function args delta: {delta}")
+                    
+                    elif event_type == "response.function_call_arguments.done":
+                        # Function call complete, execute it
+                        call_id = event.get("call_id")
+                        name = event.get("name")
+                        arguments = event.get("arguments", "{}")
+                        
+                        print(f"🔧 Function call: {name} with args: {arguments}")
+                        
+                        if name == "get_dictionary_definition":
+                            try:
+                                args = json.loads(arguments)
+                                word = args.get("word", "")
+                                
+                                if word:
+                                    print(f"📚 Looking up word: {word}")
+                                    definition_data = await fetch_dictionary_definition(word)
+                                    
+                                    # Log the actual API response
+                                    print(f"📊 Dictionary API returned:")
+                                    print(f"   Found: {definition_data.get('found')}")
+                                    print(f"   Word: {definition_data.get('word')}")
+                                    print(f"   Definition: {definition_data.get('definition', 'N/A')}")
+                                    print(f"   Example: {definition_data.get('example', 'N/A')}")
+                                    print(f"   Audio URL: {definition_data.get('audio_url', 'N/A')}")
+                                    
+                                    # Prepare the output to send to OpenAI
+                                    output_data = {
+                                        "found": definition_data["found"],
+                                        "word": definition_data["word"],
+                                        "definition": definition_data.get("definition", ""),
+                                        "example": definition_data.get("example", ""),
+                                        "audio_url": definition_data.get("audio_url", "")
+                                    }
+                                    
+                                    print(f"📤 Sending to OpenAI: {json.dumps(output_data, indent=2)}")
+                                    
+                                    # Send function result back
+                                    function_result = {
+                                        "type": "conversation.item.create",
+                                        "item": {
+                                            "type": "function_call_output",
+                                            "call_id": call_id,
+                                            "output": json.dumps(output_data)
+                                        }
+                                    }
+                                    
+                                    await openai_ws.send(json.dumps(function_result))
+                                    print("📤 Sent dictionary result to OpenAI")
+                                    
+                                    # Request response after function result
+                                    await openai_ws.send(json.dumps({
+                                        "type": "response.create"
+                                    }))
+                                    print("📤 Requested response generation")
+                                    
+                            except Exception as e:
+                                print(f"🔴 Error handling function call: {e}")
+                                # Send error result
+                                error_result = {
+                                    "type": "conversation.item.create",
+                                    "item": {
+                                        "type": "function_call_output",
+                                        "call_id": call_id,
+                                        "output": json.dumps({
+                                            "error": f"Failed to look up word: {str(e)}"
+                                        })
+                                    }
+                                }
+                                await openai_ws.send(json.dumps(error_result))
+                                await openai_ws.send(json.dumps({"type": "response.create"}))
+                    
+                    elif event_type == "response.output_item.done":
+                        # Log output item completion but don't handle function calls here
+                        # They're already handled in response.function_call_arguments.done
+                        item = event.get("item", {})
+                        print(f"📋 Output item completed: type={item.get('type')}, status={item.get('status')}")
+                    
+                    elif event_type == "conversation.item.created":
+                        # Log conversation items for debugging
+                        item = event.get("item", {})
+                        print(f"💬 Conversation item created: type={item.get('type')}, role={item.get('role', 'N/A')}")
+                        if item.get("type") == "function_call":
+                            print(f"   Function: {item.get('name')}, Call ID: {item.get('call_id')}")
+                            print(f"   Arguments: {item.get('arguments')}")
+                        elif item.get("type") == "function_call_output":
+                            print(f"   ✅ Function output acknowledged by OpenAI")
+                            print(f"   Call ID: {item.get('call_id')}")
+                            # Try to parse and display the output
+                            try:
+                                output = json.loads(item.get("output", "{}"))
+                                print(f"   Output data: {json.dumps(output, indent=2)}")
+                            except:
+                                print(f"   Raw output: {item.get('output')}")
+                        elif item.get("type") == "message" and item.get("role") == "assistant":
+                            # Assistant is generating a response
+                            content = item.get("content", [])
+                            if content:
+                                print(f"   🤖 Assistant starting response with {len(content)} content parts")
+                    
                     elif event_type == "conversation.item.input_audio_transcription.completed":
-                        # Capture user transcript
+                        # Just log the transcript, no dictionary lookup here
                         transcript = event.get("transcript", "")
                         print(f"📝 User said: {transcript}")
-                        
-                        # Check if user is asking for a definition
-                        lower_transcript = transcript.lower()
-                        definition_patterns = [
-                            "what is", "what's", "define", "meaning of", 
-                            "what does", "definition of", "explain"
-                        ]
-                        
-                        for pattern in definition_patterns:
-                            if pattern in lower_transcript:
-                                # Extract the word after the pattern
-                                words_after_pattern = lower_transcript.split(pattern)[-1].strip()
-                                # Remove common filler words and punctuation
-                                words_after_pattern = words_after_pattern.replace(" the ", " ").replace(" a ", " ").replace(" an ", " ")
-                                # Split and get words
-                                words = words_after_pattern.split()
-                                if words:
-                                    # Take the first meaningful word, removing punctuation
-                                    target_word = words[0].strip("?.,!\"'")
-                                    # Special case: if the pattern ends with "of" and we have "definition of X"
-                                    if pattern == "definition of" or pattern == "meaning of":
-                                        # The word is likely right after "of"
-                                        target_word = words[0].strip("?.,!\"'")
-                                    
-                                    if target_word and len(target_word) > 1:
-                                        print(f"📚 User asking for definition of: {target_word}")
-                                        
-                                        # Fetch dictionary definition asynchronously
-                                        definition_data = await fetch_dictionary_definition(target_word)
-                                        
-                                        # Inject dictionary result into conversation using correct format
-                                        if definition_data["found"]:
-                                            dict_message = {
-                                                "type": "conversation.item.create",
-                                                "item": {
-                                                    "type": "message",
-                                                    "role": "system",
-                                                    "content": [{
-                                                        "type": "input_text",
-                                                        "text": (
-                                                            f"Dictionary result for '{target_word}': "
-                                                            f"Definition: {definition_data['definition']}. "
-                                                            f"Example: {definition_data['example'] or 'No example available'}. "
-                                                            "Please explain this word to the student in a friendly and educational way."
-                                                        )
-                                                    }]
-                                                }
-                                            }
-                                        else:
-                                            dict_message = {
-                                                "type": "conversation.item.create",
-                                                "item": {
-                                                    "type": "message",
-                                                    "role": "system",
-                                                    "content": [{
-                                                        "type": "input_text",
-                                                        "text": (
-                                                            f"Could not find '{target_word}' in the dictionary. "
-                                                            "Please provide your own explanation of this word if you know it."
-                                                        )
-                                                    }]
-                                                }
-                                            }
-                                        
-                                        await openai_ws.send(json.dumps(dict_message))
-                                        print(f"📤 Sent dictionary context to OpenAI")
-                                        break
 
                     elif event_type == "response.done":
                         print("✅ Response completed")
