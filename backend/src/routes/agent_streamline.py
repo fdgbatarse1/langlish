@@ -6,6 +6,7 @@ from typing import Dict, Any, List
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import websockets
+import aiohttp
 from src.config import OPENAI_API_KEY
 from src.services.s3_service import s3_service
 from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm
@@ -22,6 +23,67 @@ OPENAI_WS_URL = (
 agent_realtime_router = APIRouter()
 
 
+async def fetch_dictionary_definition(word: str) -> Dict[str, Any]:
+    """
+    Fetch word definition from the free dictionary API.
+    
+    Args:
+        word: The word to look up
+        
+    Returns:
+        Dictionary containing definition data or error info
+    """
+    url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{word.lower().strip()}"
+    print(f"📖 Calling dictionary API for word: {word}")
+    print(f"🌐 URL: {url}")
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as response:
+                print(f"📡 Dictionary API response status: {response.status}")
+                if response.status == 200:
+                    data = await response.json()
+                    if data and len(data) > 0:
+                        entry = data[0]
+                        # Extract key information
+                        meanings = entry.get("meanings", [])
+                        phonetics = entry.get("phonetics", [])
+                        
+                        # Get first definition and example
+                        definition = ""
+                        example = ""
+                        if meanings:
+                            if meanings[0].get("definitions"):
+                                definition = meanings[0]["definitions"][0].get("definition", "")
+                                example = meanings[0]["definitions"][0].get("example", "")
+                        
+                        # Get audio URL if available
+                        audio_url = ""
+                        for phonetic in phonetics:
+                            if phonetic.get("audio"):
+                                audio_url = phonetic["audio"]
+                                break
+                        
+                        print(f"✅ Found definition for '{word}': {definition[:50]}...")
+                        return {
+                            "found": True,
+                            "word": word,
+                            "definition": definition,
+                            "example": example,
+                            "audio_url": audio_url
+                        }
+                else:
+                    print(f"❌ Word '{word}' not found in dictionary")
+                    return {"found": False, "word": word, "error": "Word not found"}
+                    
+    except asyncio.TimeoutError:
+        print(f"⚠️ Dictionary API timeout for word: {word}")
+        return {"found": False, "word": word, "error": "Request timeout"}
+    except Exception as e:
+        print(f"🔴 Dictionary API error: {e}")
+        return {"found": False, "word": word, "error": str(e)}
+
+
 # LangGraph State Definition
 class ConversationState(TypedDict):
     """State for the conversation workflow"""
@@ -33,6 +95,9 @@ class ConversationState(TypedDict):
     user_audio_buffer: List[bytes]
     assistant_audio_buffer: List[bytes]
     completed: bool
+    user_transcript: str  # Track user's speech transcript
+    dictionary_word: str  # Word to look up in dictionary
+    needs_dictionary: bool  # Flag to check if dictionary lookup is needed
 
 
 # Create the LangGraph workflow
@@ -83,6 +148,9 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                 "voice": "alloy",
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
+                "input_audio_transcription": {
+                    "model": "whisper-1"
+                },
                 "turn_detection": {
                     "type": "server_vad",
                     "threshold": 0.5,
@@ -96,7 +164,8 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                     "conversation practice. Your role is to: help the user practice "
                     "english conversation, correct grammar mistakes gently, suggest "
                     "better vocabulary when appropriate, encourage the student, and "
-                    "adapt to the student's level."
+                    "adapt to the student's level. When you receive dictionary "
+                    "information, explain it in a clear and educational way."
                 ),
             },
         }
@@ -250,6 +319,78 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                     elif event_type == "response.text.delta":
                         text_delta = event.get("delta", "")
                         print(f"📝 Text response: {text_delta}")
+                    
+                    elif event_type == "conversation.item.input_audio_transcription.completed":
+                        # Capture user transcript
+                        transcript = event.get("transcript", "")
+                        print(f"📝 User said: {transcript}")
+                        
+                        # Check if user is asking for a definition
+                        lower_transcript = transcript.lower()
+                        definition_patterns = [
+                            "what is", "what's", "define", "meaning of", 
+                            "what does", "definition of", "explain"
+                        ]
+                        
+                        for pattern in definition_patterns:
+                            if pattern in lower_transcript:
+                                # Extract the word after the pattern
+                                words_after_pattern = lower_transcript.split(pattern)[-1].strip()
+                                # Remove common filler words and punctuation
+                                words_after_pattern = words_after_pattern.replace(" the ", " ").replace(" a ", " ").replace(" an ", " ")
+                                # Split and get words
+                                words = words_after_pattern.split()
+                                if words:
+                                    # Take the first meaningful word, removing punctuation
+                                    target_word = words[0].strip("?.,!\"'")
+                                    # Special case: if the pattern ends with "of" and we have "definition of X"
+                                    if pattern == "definition of" or pattern == "meaning of":
+                                        # The word is likely right after "of"
+                                        target_word = words[0].strip("?.,!\"'")
+                                    
+                                    if target_word and len(target_word) > 1:
+                                        print(f"📚 User asking for definition of: {target_word}")
+                                        
+                                        # Fetch dictionary definition asynchronously
+                                        definition_data = await fetch_dictionary_definition(target_word)
+                                        
+                                        # Inject dictionary result into conversation using correct format
+                                        if definition_data["found"]:
+                                            dict_message = {
+                                                "type": "conversation.item.create",
+                                                "item": {
+                                                    "type": "message",
+                                                    "role": "system",
+                                                    "content": [{
+                                                        "type": "input_text",
+                                                        "text": (
+                                                            f"Dictionary result for '{target_word}': "
+                                                            f"Definition: {definition_data['definition']}. "
+                                                            f"Example: {definition_data['example'] or 'No example available'}. "
+                                                            "Please explain this word to the student in a friendly and educational way."
+                                                        )
+                                                    }]
+                                                }
+                                            }
+                                        else:
+                                            dict_message = {
+                                                "type": "conversation.item.create",
+                                                "item": {
+                                                    "type": "message",
+                                                    "role": "system",
+                                                    "content": [{
+                                                        "type": "input_text",
+                                                        "text": (
+                                                            f"Could not find '{target_word}' in the dictionary. "
+                                                            "Please provide your own explanation of this word if you know it."
+                                                        )
+                                                    }]
+                                                }
+                                            }
+                                        
+                                        await openai_ws.send(json.dumps(dict_message))
+                                        print(f"📤 Sent dictionary context to OpenAI")
+                                        break
 
                     elif event_type == "response.done":
                         print("✅ Response completed")
@@ -365,7 +506,10 @@ async def agent_streamline(websocket: WebSocket) -> None:
         response_active=False,
         user_audio_buffer=[],
         assistant_audio_buffer=[],
-        completed=False
+        completed=False,
+        user_transcript="",
+        dictionary_word="",
+        needs_dictionary=False
     )
     
     try:
