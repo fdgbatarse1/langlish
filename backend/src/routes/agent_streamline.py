@@ -9,11 +9,13 @@ import websockets
 import aiohttp
 from src.config import OPENAI_API_KEY
 from src.services.s3_service import s3_service
-from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm
+from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm 
 
 # LangGraph imports
 from langgraph.graph import StateGraph, END
 from typing_extensions import TypedDict
+
+
 
 OPENAI_WS_URL = (
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"

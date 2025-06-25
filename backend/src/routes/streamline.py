@@ -11,8 +11,7 @@ from src.services.s3_service import s3_service
 from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm
 
 from src.mlflow_config import setup_mlflow
-from src.routes.prompt_tracker import log_prompt_version
-
+from src.services.prompt_tracker import log_prompt_version
 
 OPENAI_WS_URL = (
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
