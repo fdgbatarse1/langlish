@@ -74,6 +74,9 @@ async def streamline(websocket: WebSocket) -> None:
                 "voice": "alloy",
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
+                "input_audio_transcription": {
+                    "model": "whisper-1"
+                },
                 "turn_detection": {
                     "type": "server_vad",
                     "threshold": 0.5,
@@ -223,7 +226,7 @@ async def streamline(websocket: WebSocket) -> None:
             Returns:
                 None
             """
-            nonlocal response_active, assistant_audio_buffer, assistant_text_buffer
+            nonlocal response_active, assistant_audio_buffer, assistant_text_buffer, user_text_buffer
 
             try:
                 async for message in openai_ws:
@@ -250,18 +253,41 @@ async def streamline(websocket: WebSocket) -> None:
                             assistant_text_buffer.append(text_delta)
                             print(f"📝 Text response: {text_delta}")
 
-                    elif event_type == "response.user_transcript.delta":
-                        user_text = event.get("text", "")
-                        is_final = event.get("is_final", False)
-                        if user_text:
-                            print(f"🎤 User said: {user_text} {'(final)' if is_final else '(interim)'}")
-                            if is_final:
-                                user_text_buffer.append(user_text)
+                    elif event_type == "conversation.item.input_audio_transcription.completed":
+                        # Handle user transcript - same as code 2
+                        transcript = event.get("transcript", "")
+                        print(f"📝 User said: {transcript}")
+                        if transcript:
+                            user_text_buffer.append(transcript)
 
+                    elif event_type == "conversation.item.input_audio_transcription.failed":
+                        # Handle transcription failures
+                        error = event.get("error", {})
+                        print(f"🔴 User transcription failed: {error}")
 
-                    elif event_type == "response.done":
-                        print("✅ Response completed")
-                        response_active = False
+                    elif event_type == "input_audio_buffer.speech_started":
+                        # User started speaking
+                        print("🎤 User started speaking")
+
+                    elif event_type == "input_audio_buffer.speech_stopped":
+                        # User stopped speaking
+                        print("🎤 User stopped speaking")
+
+                    elif event_type == "conversation.item.created":
+                        # Log conversation items for debugging
+                        item = event.get("item", {})
+                        item_type = item.get("type", "")
+                        print(f"💬 Conversation item created: type={item_type}")
+                        
+                        # Check if this is a user message with transcript
+                        if item_type == "message" and item.get("role") == "user":
+                            content = item.get("content", [])
+                            for content_part in content:
+                                if content_part.get("type") == "input_audio" and "transcript" in content_part:
+                                    transcript = content_part["transcript"]
+                                    print(f"📝 User said (from content): {transcript}")
+                                    if transcript:
+                                        user_text_buffer.append(transcript)
 
                     elif event_type == "response.done":
                         print("✅ Response completed")
