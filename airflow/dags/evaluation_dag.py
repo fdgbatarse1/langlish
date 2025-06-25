@@ -15,7 +15,8 @@ import logging
 from src.services.s3_service import S3Service
 from src.evaluate_response import evaluate_multiple_sessions
 
-
+import mlflow
+from src.mlflow_config import setup_mlflow
 
 default_args = {
     'owner': 'data-team',
@@ -123,22 +124,47 @@ def merge_sessions_data(**context):
     return all_merged_sessions
 
 def evaluate_sessions(**context):
-    """
-    Evaluate all merged sessions using the evaluation function.
-    """
-    # Get merged sessions from previous task
+    setup_mlflow()
+
     merged_sessions = context['task_instance'].xcom_pull(task_ids='merge_sessions')
-    
     if not merged_sessions:
         logging.warning("No merged sessions received")
         return []
     
-    # You would import and use your actual evaluation function here
-    # For now, I'll include a simplified version
-    
-    result = evaluate_multiple_sessions(merged_sessions)
-    
-    return result
+    results = evaluate_multiple_sessions(merged_sessions)
+
+    # Use a parent run for the entire evaluation batch
+    parent_run_name = f"airflow_eval_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    with mlflow.start_run(run_name=parent_run_name):
+        mlflow.log_param("num_sessions", len(merged_sessions))
+        mlflow.log_param("evaluation_type", "streamline_conversations")
+
+        for result in results:
+            session_id = result["session_id"]
+
+            session_config = get_session_config(session_id) 
+
+            # Create a nested run for this session to keep prompt and evaluation separate
+            with mlflow.start_run(run_name=f"session_{session_id}", nested=True):
+                # Log prompt/config
+                model_version = session_config.get("model_version", "gpt-4o")
+                instructions = session_config.get("session", {}).get("instructions", "")
+                
+                mlflow.log_param("model_version", model_version)
+                mlflow.log_param("session_id", session_id)
+                mlflow.log_text(instructions, "prompt.txt")
+                mlflow.log_dict(session_config, "session_config.json")
+
+                # Log evaluation metrics
+                for metric_name, metric_details in result["metrics"].items():
+                    score = metric_details.get("score")
+                    if score is not None:
+                        mlflow.log_metric(f"{metric_name}", score)
+                
+                # Log full results artifact
+                mlflow.log_dict(result, f"results/{session_id}.json")
+
+    return results
 
 def print_results(**context):
     """
@@ -152,6 +178,41 @@ def print_results(**context):
 
     for result in results:
         logging.info(f"Evaluation result for session {result['session_id']}: {json.dumps(result, indent=2)}")
+
+######mock###
+def get_session_config(session_id):
+    """
+    Returns a mock session configuration dictionary
+    similar to what your application uses to configure
+    the OpenAI session or prompt instructions.
+    """
+    return {
+        "session": {
+            "modalities": ["audio", "text"],
+            "voice": "alloy",
+            "input_audio_format": "pcm16",
+            "output_audio_format": "pcm16",
+            "input_audio_transcription": {
+                "model": "whisper-1"
+            },
+            "turn_detection": {
+                "type": "server_vad",
+                "threshold": 0.5,
+                "prefix_padding_ms": 300,
+                "silence_duration_ms": 500,
+                "create_response": True,
+            },
+            "instructions": (
+                "You are Langlish, a friendly and patient English learning "
+                "assistant. You help students improve their English through "
+                "conversation practice. Your role is to: help the user practice "
+                "english conversation, correct grammar mistakes gently, suggest "
+                "better vocabulary when appropriate, encourage the student, and "
+                "adapt to the student's level."
+            ),
+        }
+    }
+
 
 
 # Define tasks
