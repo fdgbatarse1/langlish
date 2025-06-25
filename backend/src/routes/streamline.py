@@ -52,6 +52,7 @@ async def streamline(websocket: WebSocket) -> None:
     assistant_audio_buffer: List[bytes] = []
 
     # Text buffer for S3
+    user_text_buffer: List[str] = []
     assistant_text_buffer: List[str] = []
 
     try:
@@ -107,7 +108,7 @@ async def streamline(websocket: WebSocket) -> None:
             Returns:
                 None
             """
-            nonlocal audio_buffer_size, response_active, user_audio_buffer
+            nonlocal audio_buffer_size, response_active, user_audio_buffer, user_text_buffer
 
             try:
                 while True:
@@ -249,17 +250,31 @@ async def streamline(websocket: WebSocket) -> None:
                             assistant_text_buffer.append(text_delta)
                             print(f"📝 Text response: {text_delta}")
 
+                    elif event_type == "response.user_transcript.delta":
+                        user_text = event.get("text", "")
+                        is_final = event.get("is_final", False)
+                        if user_text:
+                            print(f"🎤 User said: {user_text} {'(final)' if is_final else '(interim)'}")
+                            if is_final:
+                                user_text_buffer.append(user_text)
+
+
+                    elif event_type == "response.done":
+                        print("✅ Response completed")
+                        response_active = False
+
                     elif event_type == "response.done":
                         print("✅ Response completed")
                         response_active = False
 
                         assistant_responses = {
                             "session_id": session_id,
+                            "user": " ".join(user_text_buffer),
                             "assistant": " ".join(assistant_text_buffer),
                         }
 
                         print("📝 Full conversation:")
-                        print(json.dumps(assistant_responses, indent=2))
+                        print(json.dumps(assistant_responses, indent=2, ensure_ascii=False))
 
                         if s3_service:
                             await asyncio.to_thread(
@@ -274,6 +289,7 @@ async def streamline(websocket: WebSocket) -> None:
                             )
                         #clear
                         assistant_text_buffer = []
+                        user_text_buffer = []
                                                 
                         # Save assistant audio to S3 if available
                         if assistant_audio_buffer and s3_service:
