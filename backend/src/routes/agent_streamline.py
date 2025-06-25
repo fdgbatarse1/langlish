@@ -137,6 +137,10 @@ async def langlish_node(state: ConversationState) -> ConversationState:
     user_audio_buffer = state["user_audio_buffer"]
     assistant_audio_buffer = state["assistant_audio_buffer"]
     
+    # Add text buffers for S3 conversation saving
+    user_text_buffer: List[str] = []
+    assistant_text_buffer: List[str] = []
+    
     try:
         print("🔗 Connecting to OpenAI WebSocket...")
         openai_ws = await websockets.connect(
@@ -328,7 +332,7 @@ async def langlish_node(state: ConversationState) -> ConversationState:
             Returns:
                 None
             """
-            nonlocal response_active, assistant_audio_buffer
+            nonlocal response_active, assistant_audio_buffer, user_text_buffer, assistant_text_buffer
 
             try:
                 async for message in openai_ws:
@@ -353,9 +357,11 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                         print(f"📝 Text response: {text_delta}")
                     
                     elif event_type == "response.audio_transcript.delta":
-                        # Log what the assistant is saying
+                        # Log what the assistant is saying and store for S3
                         transcript_delta = event.get("delta", "")
                         print(f"🗣️ Assistant saying: {transcript_delta}")
+                        if transcript_delta:
+                            assistant_text_buffer.append(transcript_delta)
                     
                     elif event_type == "response.audio_transcript.done":
                         # Log the complete transcript of what the assistant said
@@ -474,13 +480,40 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                                 print(f"   🤖 Assistant starting response with {len(content)} content parts")
                     
                     elif event_type == "conversation.item.input_audio_transcription.completed":
-                        # Just log the transcript, no dictionary lookup here
+                        # Handle user transcript and store for S3
                         transcript = event.get("transcript", "")
                         print(f"📝 User said: {transcript}")
+                        if transcript:
+                            user_text_buffer.append(transcript)
 
                     elif event_type == "response.done":
                         print("✅ Response completed")
                         response_active = False
+
+                        # Save conversation to S3 - THIS WAS MISSING IN CODE 2
+                        assistant_responses = {
+                            "session_id": session_id,
+                            "user": " ".join(user_text_buffer),
+                            "assistant": " ".join(assistant_text_buffer),
+                        }
+
+                        print("📝 Full conversation:")
+                        print(json.dumps(assistant_responses, indent=2, ensure_ascii=False))
+
+                        if s3_service:
+                            await asyncio.to_thread(
+                                s3_service.upload_text,
+                                json.dumps(assistant_responses, ensure_ascii=False, indent=2), 
+                                f"{session_id}_conversation.json",                             
+                                "application/json",                                          
+                                {
+                                    "session_id": session_id,
+                                    "type": "conversation_log"
+                                }                                                             
+                            )
+                        # Clear text buffers
+                        assistant_text_buffer = []
+                        user_text_buffer = []
 
                         # Save assistant audio to S3 if available
                         if assistant_audio_buffer and s3_service:
