@@ -1,3 +1,4 @@
+import re
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -18,6 +19,88 @@ def run_gpt(prompt: str) -> str:
         temperature=0
     )
     return response.choices[0].message.content
+
+def parse_gpt_response(grading_output: str) -> tuple:
+    """
+    Parse GPT response to extract score and justification.
+    Returns (score, justification) tuple.
+    """
+    score = None
+    justification = ""
+    
+    # First, try to find score using regex patterns
+    score_patterns = [
+        r'score[:\s]*(\d+)',
+        r'rating[:\s]*(\d+)',
+        r'(\d+)[/\s]*5',
+        r'(\d+)[/\s]*out of 5',
+    ]
+    
+    for pattern in score_patterns:
+        match = re.search(pattern, grading_output, re.IGNORECASE)
+        if match:
+            try:
+                potential_score = int(match.group(1))
+                if 1 <= potential_score <= 5:
+                    score = potential_score
+                    break
+            except (ValueError, IndexError):
+                continue
+    
+    # If no score found with regex, try line-by-line parsing
+    if score is None:
+        lines = grading_output.split("\n")
+        for line in lines:
+            line = line.strip()
+            if any(keyword in line.lower() for keyword in ["score", "rating"]) and ":" in line:
+                parts = line.split(":", 1)
+                if len(parts) > 1:
+                    try:
+                        score_text = parts[1].strip()
+                        # Extract just the number
+                        numbers = re.findall(r'\d+', score_text)
+                        if numbers:
+                            potential_score = int(numbers[0])
+                            if 1 <= potential_score <= 5:
+                                score = potential_score
+                                break
+                    except (ValueError, IndexError):
+                        continue
+    
+    # Extract justification
+    justification_patterns = [
+        r'justification[:\s]*(.*?)(?=\n\n|\n[A-Z]|$)',
+        r'explanation[:\s]*(.*?)(?=\n\n|\n[A-Z]|$)',
+        r'reasoning[:\s]*(.*?)(?=\n\n|\n[A-Z]|$)',
+    ]
+    
+    for pattern in justification_patterns:
+        match = re.search(pattern, grading_output, re.IGNORECASE | re.DOTALL)
+        if match:
+            justification = match.group(1).strip()
+            # Clean up the justification
+            justification = re.sub(r'\n+', ' ', justification)
+            justification = re.sub(r'\s+', ' ', justification)
+            break
+    
+    # If no structured justification found, use the entire response as justification
+    if not justification:
+        # Remove the score line and use the rest
+        lines = grading_output.split("\n")
+        filtered_lines = []
+        for line in lines:
+            line = line.strip()
+            if line and not any(keyword in line.lower() for keyword in ["score", "rating"]):
+                filtered_lines.append(line)
+        justification = " ".join(filtered_lines)
+    
+    # Fallback: if still no score, try to extract any number from the response
+    if score is None:
+        numbers = re.findall(r'\b[1-5]\b', grading_output)
+        if numbers:
+            score = int(numbers[0])
+    
+    return score, justification
 
 def evaluate_session(session_data: Dict) -> dict:
     """
@@ -67,7 +150,6 @@ Score 3: Some encouragement present. Occasionally asks questions or suggests new
 Score 4: Good encouragement. Regularly asks follow-up questions, introduces new challenges, and motivates continued practice.
 Score 5: Excellent encouragement. Consistently asks engaging questions, provides progressive challenges, and actively motivates user to continue practicing with enthusiasm.
 """,
-
     }
 
     result = {
@@ -88,40 +170,26 @@ Full Assistant Conversation: {assistant_text}
 
 Please evaluate the ENTIRE conversation session, not just individual exchanges. Consider how well the assistant performed on this metric throughout the complete interaction.
 
-Please provide:
-- A score from 1 to 5
-- A brief justification for the score based on the overall conversation
+Please provide your response in this format:
+Score: [1-5]
+Justification: [Your detailed explanation here]
 """
 
-        grading_output = run_gpt(grading_prompt)
-
-        # Parse the score and justification
-        score = None
-        justification = ""
-        lines = grading_output.split("\n")
-        
-        for i, line in enumerate(lines):
-            if "score" in line.lower() and ":" in line:
-                parts = line.split(":")
-                if len(parts) > 1:
-                    try:
-                        score_text = parts[1].strip()
-                        # Extract just the number
-                        score = int(''.join(filter(str.isdigit, score_text)))
-                        if score < 1 or score > 5:
-                            score = None
-                    except:
-                        pass
-            elif "justification" in line.lower() and ":" in line:
-                parts = line.split(":", 1)
-                if len(parts) > 1:
-                    justification = parts[1].strip()
-                    # If justification continues on next lines, capture them too
-                    for j in range(i + 1, len(lines)):
-                        if lines[j].strip() and not any(keyword in lines[j].lower() for keyword in ["score", "rating"]):
-                            justification += " " + lines[j].strip()
-                        else:
-                            break
+        try:
+            grading_output = run_gpt(grading_prompt)
+            score, justification = parse_gpt_response(grading_output)
+            
+            # Log the raw output for debugging
+            print(f"Raw GPT output for {metric}:")
+            print(grading_output)
+            print(f"Parsed - Score: {score}, Justification: {justification[:100]}...")
+            print("-" * 50)
+            
+        except Exception as e:
+            print(f"Error getting GPT response for {metric}: {e}")
+            score = None
+            justification = f"Error occurred during evaluation: {e}"
+            grading_output = ""
 
         result["metrics"][metric] = {
             "score": score,

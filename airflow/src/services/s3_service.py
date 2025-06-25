@@ -249,19 +249,22 @@ class S3Service:
         Pull all conversation files from S3 bucket using your S3Service.
         """
         
-        if not s3_service:
+        if not self.s3_client: 
             logging.error("S3 service not initialized")
             return []
         
-        bucket_name = s3_service.bucket_name
+        bucket_name = self.bucket_name 
         if type == "streamline":
             prefix = 'conversations_streamline/'
         elif type == "agent_streamline":
             prefix = 'conversations_agent_streamline/'
+        else:
+            logging.error(f"Unknown type: {type}")
+            return []
         
         try:
             # List all objects with the prefix using boto3 directly
-            response = s3_service.s3_client.list_objects_v2(
+            response = self.s3_client.list_objects_v2(  
                 Bucket=bucket_name,
                 Prefix=prefix
             )
@@ -270,50 +273,44 @@ class S3Service:
                 logging.warning(f"No objects found in s3://{bucket_name}/{prefix}")
                 return []
             
+            paginator = self.s3_client.get_paginator('list_objects_v2')
+            pages = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
+
             all_conversations = []
-            
-            for obj in response['Contents']:
-                obj_key = obj['Key']
-                
-                # Skip directories and non-JSON files
-                if obj_key.endswith('/') or not (obj_key.endswith('.json') or obj_key.endswith('.jsonl')):
+
+            for page in pages:
+                if 'Contents' not in page:
                     continue
-                    
-                try:
-                    # Download object content using your S3Service
-                    response_obj = s3_service.s3_client.get_object(
-                        Bucket=bucket_name,
-                        Key=obj_key
-                    )
-                    obj_content = response_obj['Body'].read().decode('utf-8')
-                    
-                    # Parse based on file type
-                    if obj_key.endswith('.json'):
-                        data = json.loads(obj_content)
-                        if isinstance(data, list):
-                            all_conversations.extend(data)
-                        else:
-                            all_conversations.append(data)
-                            
-                    elif obj_key.endswith('.jsonl'):
-                        # Handle JSONL format
-                        for line in obj_content.strip().split('\n'):
-                            if line.strip():
-                                all_conversations.append(json.loads(line))
-                                
-                    logging.info(f"Processed {obj_key}: {len(all_conversations)} total conversations so far")
-                    
-                except Exception as e:
-                    logging.error(f"Error processing {obj_key}: {str(e)}")
-                    continue
-            
-            logging.info(f"Total conversations pulled: {len(all_conversations)}")
+                for obj in page['Contents']:
+                    obj_key = obj['Key']
+                    if obj_key.endswith('/') or not (obj_key.endswith('.json') or obj_key.endswith('.jsonl')):
+                        continue
+                    try:
+                        response_obj = self.s3_client.get_object(Bucket=bucket_name, Key=obj_key)
+                        obj_content = response_obj['Body'].read().decode('utf-8')
+
+                        if obj_key.endswith('.json'):
+                            data = json.loads(obj_content)
+                            all_conversations.extend(data if isinstance(data, list) else [data])
+                        elif obj_key.endswith('.jsonl'):
+                            for line in obj_content.strip().split('\n'):
+                                if line.strip():
+                                    all_conversations.append(json.loads(line))
+
+                        logging.info(f"✅ Processed {obj_key}: total so far = {len(all_conversations)}")
+
+                    except Exception as e:
+                        logging.error(f"❌ Error processing {obj_key}: {str(e)}")
+                        continue
+
+            logging.info(f"🎉 Total conversations pulled: {len(all_conversations)}")
             return all_conversations
+
             
         except Exception as e:
             logging.error(f"Error listing S3 objects: {str(e)}")
             return []
-        
+            
 
 
 

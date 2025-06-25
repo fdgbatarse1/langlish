@@ -1,7 +1,11 @@
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 import pandas as pd
 import json
 from typing import List, Dict
@@ -9,6 +13,7 @@ from collections import defaultdict
 import logging
 
 from src.services.s3_service import S3Service
+from src.evaluate_response import evaluate_multiple_sessions
 
 
 
@@ -26,7 +31,7 @@ dag = DAG(
     'conversation_evaluation_pipeline',
     default_args=default_args,
     description='Pull conversation data from S3, merge sessions, and evaluate',
-    schedule_interval='@daily',
+    schedule='@daily',
     catchup=False,
     tags=['nlp', 'evaluation', 's3'],
 )
@@ -35,7 +40,8 @@ def pull_conversation(type):
     """
     Pull from S3
     """
-    return S3Service.pull_conversations_from_s3(type)
+    s3_service = S3Service() 
+    return s3_service.pull_conversations_from_s3(type)
 
 def group_conversations_by_session(**context):
     """
@@ -130,35 +136,9 @@ def evaluate_sessions(**context):
     # You would import and use your actual evaluation function here
     # For now, I'll include a simplified version
     
-    def mock_evaluate_session(session_data: Dict) -> Dict:
-        """
-        Mock evaluation function - replace with your actual evaluate_session function
-        """
-        return {
-            "session_id": session_data["session_id"],
-            "metrics": {
-                "clarity_score": {"score": 4, "justification": "Mock evaluation"},
-                "vocabulary_enrichment_score": {"score": 3, "justification": "Mock evaluation"},
-                "language_accuracy_score": {"score": 5, "justification": "Mock evaluation"},
-                "fluency_practice_score": {"score": 4, "justification": "Mock evaluation"},
-            }
-        }
+    result = evaluate_multiple_sessions(merged_sessions)
     
-    evaluation_results = []
-    
-    for session in merged_sessions:
-        try:
-            # Replace this with your actual evaluate_session function
-            evaluation = mock_evaluate_session(session)
-            evaluation_results.append(evaluation)
-            
-        except Exception as e:
-            logging.error(f"Error evaluating session {session.get('session_id')}: {str(e)}")
-            continue
-    
-    logging.info(f"Evaluated {len(evaluation_results)} sessions")
-    
-    return evaluation_results
+    return result
 
 def print_results(**context):
     """
@@ -177,7 +157,7 @@ def print_results(**context):
 # Define tasks
 pull_data_task = PythonOperator(
     task_id='pull_s3_data',
-    python_callable=pull_conversation("streamline"),
+    python_callable=lambda: pull_conversation(type="streamline"),
     dag=dag,
 )
 
@@ -200,7 +180,7 @@ evaluate_sessions_task = PythonOperator(
 )
 
 print_results_task = PythonOperator(
-    task_id='save_results',
+    task_id='print_results',
     python_callable=print_results,
     dag=dag,
 )
