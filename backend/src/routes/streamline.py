@@ -261,16 +261,17 @@ async def streamline(websocket: WebSocket) -> None:
                         print("📝 Full conversation:")
                         print(json.dumps(assistant_responses, indent=2))
 
-                        await asyncio.to_thread(
-                            s3_service.upload_text,
-                            json.dumps(assistant_responses, ensure_ascii=False, indent=2), 
-                            f"{session_id}_conversation.json",                             
-                            "application/json",                                          
-                            {
-                                "session_id": session_id,
-                                "type": "conversation_log"
-                            }                                                             
-                        )
+                        if s3_service:
+                            await asyncio.to_thread(
+                                s3_service.upload_text,
+                                json.dumps(assistant_responses, ensure_ascii=False, indent=2), 
+                                f"{session_id}_conversation.json",                             
+                                "application/json",                                          
+                                {
+                                    "session_id": session_id,
+                                    "type": "conversation_log"
+                                }                                                             
+                            )
                         #clear
                         assistant_text_buffer = []
                                                 
