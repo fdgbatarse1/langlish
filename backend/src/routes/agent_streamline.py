@@ -504,7 +504,7 @@ async def langlish_node(state: ConversationState) -> ConversationState:
 
                         if s3_service:
                             await asyncio.to_thread(
-                                s3_service.upload_text,
+                                s3_service.upload_text_agent_streamline,
                                 json.dumps(assistant_responses, ensure_ascii=False, indent=2), 
                                 f"{session_id}_conversation.json",                             
                                 "application/json",                                          
