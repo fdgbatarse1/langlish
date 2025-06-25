@@ -2,7 +2,7 @@
 
 ## Description
 
-Langlish is a voice-based English learning assistant powered by AI. This backend service provides the API infrastructure for the voice assistant application, built with FastAPI for high performance and modern Python features.
+Langlish is a real-time English learning voice assistant that uses OpenAI's speech-to-speech technology to provide immersive and interactive language practice. Learners can speak naturally and receive immediate spoken feedback, corrections, and guidance from an AI English tutor. This backend service provides the API infrastructure for the voice assistant application, built with FastAPI for high performance and modern Python features, enabling vocabulary expansion through clear explanations and contextual usage in interactive conversations.
 
 ## Features
 

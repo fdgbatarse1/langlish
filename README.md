@@ -2,7 +2,7 @@
 
 ## Description
 
-Langlish is a real-time English learning voice assistant that uses OpenAI's speech-to-speech technology to provide conversational English practice. Students can speak naturally and receive immediate feedback, corrections, and guidance from an AI English teacher through voice interaction.
+Langlish is a real-time English learning voice assistant that uses OpenAI's speech-to-speech technology to provide immersive and interactive language practice. Learners can speak naturally and receive immediate spoken feedback, corrections, and guidance from an AI English tutor. Langlish helps expand vocabulary by offering clear explanations, contextual usage, and interactive conversation, making learning new words intuitive and engaging.
 
 ## Features
 

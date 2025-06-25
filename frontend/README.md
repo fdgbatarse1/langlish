@@ -2,7 +2,7 @@
 
 ## Description
 
-Langlish frontend is a modern React-based web application that provides the user interface for the voice-based English learning assistant. Built with React 18, TypeScript, and Vite for optimal performance and developer experience, it features real-time audio recording and playback capabilities for seamless voice interaction.
+Langlish is a real-time English learning voice assistant that uses OpenAI's speech-to-speech technology to provide immersive and interactive language practice. Learners can speak naturally and receive immediate spoken feedback, corrections, and guidance from an AI English tutor. This frontend provides a modern React-based web interface that enables seamless voice interaction, helping learners expand their vocabulary through intuitive and engaging conversations with real-time audio recording and playback capabilities.
 
 ## Features
 
