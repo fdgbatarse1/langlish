@@ -1,5 +1,8 @@
 FROM python:3.11
 
+# Install ffmpeg for audio processing
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+
 # Set the working directory
 WORKDIR /code
 
