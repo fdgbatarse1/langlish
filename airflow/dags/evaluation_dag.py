@@ -149,6 +149,10 @@ def evaluate_sessions(**context):
                 # Log prompt/config
                 model_version = session_config.get("model_version", "gpt-4o")
                 instructions = session_config.get("session", {}).get("instructions", "")
+
+                # Register prompt in MLflow Prompt Registry
+                prompt_name = "langlish-instruction-prompt"
+                mlflow.genai.create_or_update_prompt(name=prompt_name, prompt=instructions)
                 
                 mlflow.log_param("model_version", model_version)
                 mlflow.log_param("session_id", session_id)
