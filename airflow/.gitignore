@@ -179,3 +179,4 @@ pyrightconfig.json
 # End of https://www.toptal.com/developers/gitignore/api/python
 
 logs/
+simple_auth_manager_passwords.json.generated
