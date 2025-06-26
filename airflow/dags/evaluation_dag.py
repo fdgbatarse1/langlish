@@ -142,6 +142,8 @@ def evaluate_sessions(**context):
         for result in results:
             session_id = result["session_id"]
 
+            # Find the corresponding session data for conversation history
+            session_data = next((s for s in merged_sessions if s["session_id"] == session_id), {})
             session_config = get_session_config(session_id) 
 
             # Create a nested run for this session to keep prompt and evaluation separate
@@ -149,7 +151,7 @@ def evaluate_sessions(**context):
                 # Log prompt/config
                 model_version = session_config.get("model_version", "gpt-4o")
                 instructions = session_config.get("session", {}).get("instructions", "")
-
+                
                 # Register prompt in MLflow Prompt Registry
                 prompt_name = "langlish-instruction-prompt"
                 mlflow.genai.create_or_update_prompt(name=prompt_name, prompt=instructions)
@@ -158,6 +160,17 @@ def evaluate_sessions(**context):
                 mlflow.log_param("session_id", session_id)
                 mlflow.log_text(instructions, "prompt.txt")
                 mlflow.log_dict(session_config, "session_config.json")
+
+                # Log conversation history
+                if session_data:
+                    conversation_data = {
+                        "session_id": session_id,
+                        "user_messages": session_data.get("user", ""),
+                        "assistant_messages": session_data.get("assistant", ""),
+                        "conversation_length": len(session_data.get("user", "").split()) + len(session_data.get("assistant", "").split())
+                    }
+                    mlflow.log_dict(conversation_data, f"conversations/{session_id}_conversation.json")
+                    mlflow.log_param("conversation_length_words", conversation_data["conversation_length"])
 
                 # Log evaluation metrics
                 for metric_name, metric_details in result["metrics"].items():
