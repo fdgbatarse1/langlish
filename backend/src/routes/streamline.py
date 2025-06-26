@@ -96,9 +96,6 @@ async def streamline(websocket: WebSocket) -> None:
         await openai_ws.send(json.dumps(session_config))
         print("✅ Session configuration sent")
 
-        setup_mlflow()
-        log_prompt_version(session_config=session_config, session_id=session_id)
-
         async def handle_client_messages() -> None:
             """
             Handle messages from the frontend client.
