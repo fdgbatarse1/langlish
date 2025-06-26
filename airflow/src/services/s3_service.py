@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 import boto3
 from botocore.exceptions import ClientError, NoCredentialsError
+import json
 
 from src.config import (
     AWS_ACCESS_KEY_ID,
@@ -242,7 +243,74 @@ class S3Service:
         except Exception as e:
             logger.error(f"🔴 Unexpected error uploading evaluation to S3: {e}")
             return None
-    
+        
+    def pull_conversations_from_s3(self, type):
+        """
+        Pull all conversation files from S3 bucket using your S3Service.
+        """
+        
+        if not self.s3_client: 
+            logging.error("S3 service not initialized")
+            return []
+        
+        bucket_name = self.bucket_name 
+        if type == "streamline":
+            prefix = 'conversations_streamline/'
+        elif type == "agent_streamline":
+            prefix = 'conversations_agent_streamline/'
+        else:
+            logging.error(f"Unknown type: {type}")
+            return []
+        
+        try:
+            # List all objects with the prefix using boto3 directly
+            response = self.s3_client.list_objects_v2(  
+                Bucket=bucket_name,
+                Prefix=prefix
+            )
+            
+            if 'Contents' not in response:
+                logging.warning(f"No objects found in s3://{bucket_name}/{prefix}")
+                return []
+            
+            paginator = self.s3_client.get_paginator('list_objects_v2')
+            pages = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
+
+            all_conversations = []
+
+            for page in pages:
+                if 'Contents' not in page:
+                    continue
+                for obj in page['Contents']:
+                    obj_key = obj['Key']
+                    if obj_key.endswith('/') or not (obj_key.endswith('.json') or obj_key.endswith('.jsonl')):
+                        continue
+                    try:
+                        response_obj = self.s3_client.get_object(Bucket=bucket_name, Key=obj_key)
+                        obj_content = response_obj['Body'].read().decode('utf-8')
+
+                        if obj_key.endswith('.json'):
+                            data = json.loads(obj_content)
+                            all_conversations.extend(data if isinstance(data, list) else [data])
+                        elif obj_key.endswith('.jsonl'):
+                            for line in obj_content.strip().split('\n'):
+                                if line.strip():
+                                    all_conversations.append(json.loads(line))
+
+                        logging.info(f"✅ Processed {obj_key}: total so far = {len(all_conversations)}")
+
+                    except Exception as e:
+                        logging.error(f"❌ Error processing {obj_key}: {str(e)}")
+                        continue
+
+            logging.info(f"🎉 Total conversations pulled: {len(all_conversations)}")
+            return all_conversations
+
+            
+        except Exception as e:
+            logging.error(f"Error listing S3 objects: {str(e)}")
+            return []
+            
 
 
 

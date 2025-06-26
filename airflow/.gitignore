@@ -173,6 +173,10 @@ poetry.toml
 # LSP config files
 pyrightconfig.json
 
+# mlflow
+/mlruns
+
 # End of https://www.toptal.com/developers/gitignore/api/python
 
 logs/
+simple_auth_manager_passwords.json.generated
