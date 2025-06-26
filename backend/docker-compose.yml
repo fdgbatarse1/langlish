@@ -1,0 +1,46 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: langlish-backend
+    container_name: langlish-backend-container
+    ports:
+      - "8000:80"
+    environment:
+      # Add any environment variables your app needs
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    volumes:
+      # Mount for development - comment out for production
+      - ./src:/code/src
+      - ./main.py:/code/main.py
+    restart: unless-stopped
+    # If you need to wait for other services (like a database), add depends_on
+    # depends_on:
+    #   - db
+    
+    # Health check to ensure the service is running properly
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# If you need additional services like database, redis, etc., add them here
+# Example:
+# db:
+#   image: postgres:15
+#   environment:
+#     POSTGRES_USER: langlish
+#     POSTGRES_PASSWORD: password
+#     POSTGRES_DB: langlish_db
+#   volumes:
+#     - postgres_data:/var/lib/postgresql/data
+#   ports:
+#     - "5432:5432"
+
+# volumes:
+#   postgres_data: 
