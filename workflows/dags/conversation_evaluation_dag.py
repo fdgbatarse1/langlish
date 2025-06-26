@@ -74,16 +74,34 @@ class S3Service:
     def __init__(self):
         """Initialize S3 client with credentials from environment."""
         try:
+            # Check for required environment variables
+            self.aws_access_key = os.environ.get("AWS_ACCESS_KEY_ID")
+            self.aws_secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
+            self.bucket_name = os.environ.get("AWS_S3_BUCKET_NAME")
+            
+            if not self.aws_access_key or not self.aws_secret_key:
+                raise ValueError(
+                    "Missing AWS credentials. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables."
+                )
+            
+            if not self.bucket_name:
+                raise ValueError(
+                    "Missing S3 bucket name. Please set AWS_S3_BUCKET_NAME environment variable."
+                )
+            
             self.s3_client = boto3.client(
                 "s3",
-                aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+                aws_access_key_id=self.aws_access_key,
+                aws_secret_access_key=self.aws_secret_key,
                 region_name=os.environ.get("AWS_S3_REGION", "us-east-1"),
             )
-            self.bucket_name = os.environ.get("AWS_S3_BUCKET_NAME")
+            
             logging.info(f"✅ S3 client initialized for bucket: {self.bucket_name}")
         except NoCredentialsError:
             logging.error("🔴 AWS credentials not found in environment")
+            raise
+        except ValueError as ve:
+            logging.error(f"🔴 Configuration error: {ve}")
             raise
         except Exception as e:
             logging.error(f"🔴 Error initializing S3 client: {e}")
@@ -344,9 +362,8 @@ def evaluate_sessions(**context):
                 model_version = session_config.get("model_version", "gpt-4o")
                 instructions = session_config.get("session", {}).get("instructions", "")
                 
-                # Register prompt in MLflow Prompt Registry
-                prompt_name = "langlish-instruction-prompt"
-                mlflow.genai.create_or_update_prompt(name=prompt_name, prompt=instructions)
+                # Note: MLflow Prompt Registry is not available in this version
+                # Instructions are logged as a text artifact instead
                 
                 mlflow.log_param("model_version", model_version)
                 mlflow.log_param("session_id", session_id)

@@ -13,4 +13,4 @@ USER airflow
 RUN pip install --no-cache-dir \
     openai==1.35.3 \
     boto3==1.34.122 \
-    mlflow==2.14.1 
+    mlflow==3.1.1 
