@@ -20,9 +20,13 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "lint": "eslint src --max-warnings=0",
-    "typecheck": "tsc --project tsconfig.json --noEmit"
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,css,md,json}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx,css,md,json}\"",
+    "ci:check": "npm run format:check && npm run lint && npm run typecheck && npm test run && npm run build"
   },
   "dependencies": {
+    "@sentry/react": "^9.31.0",
     "lucide-react": "^0.518.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
