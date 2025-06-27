@@ -11,12 +11,10 @@ from src.config import OPENAI_API_KEY
 from src.services.s3_service import s3_service
 from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm
 import mlflow
-
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
-
-# LangGraph imports
 from langgraph.graph import StateGraph, END
 from typing_extensions import TypedDict
+
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 
 
 OPENAI_WS_URL = (
