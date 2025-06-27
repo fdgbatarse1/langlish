@@ -1,15 +1,13 @@
-
 import mlflow
 from typing import Dict, Any
 
+
 def log_prompt_version(
-    session_config: Dict[str, Any],
-    session_id: str,
-    model_version: str = "gpt-4o"
+    session_config: Dict[str, Any], session_id: str, model_version: str = "gpt-4o"
 ) -> None:
     """
     Log session configuration and prompt instructions to MLflow for versioning.
-    
+
         session_config: The dict containing OpenAI session config (modalities, instructions, etc.)
         session_id: Unique session ID
         model_version: LLM model version string

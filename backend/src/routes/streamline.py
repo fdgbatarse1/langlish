@@ -10,9 +10,6 @@ from src.config import OPENAI_API_KEY
 from src.services.s3_service import s3_service
 from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm
 
-from src.mlflow_config import setup_mlflow
-from src.services.prompt_tracker import log_prompt_version
-
 OPENAI_WS_URL = (
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
 )
@@ -73,9 +70,7 @@ async def streamline(websocket: WebSocket) -> None:
                 "voice": "alloy",
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
-                "input_audio_transcription": {
-                    "model": "whisper-1"
-                },
+                "input_audio_transcription": {"model": "whisper-1"},
                 "turn_detection": {
                     "type": "server_vad",
                     "threshold": 0.5,
@@ -107,7 +102,11 @@ async def streamline(websocket: WebSocket) -> None:
             Returns:
                 None
             """
-            nonlocal audio_buffer_size, response_active, user_audio_buffer, user_text_buffer
+            nonlocal \
+                audio_buffer_size, \
+                response_active, \
+                user_audio_buffer, \
+                user_text_buffer
 
             try:
                 while True:
@@ -135,7 +134,7 @@ async def streamline(websocket: WebSocket) -> None:
                                         "type": "input_audio_buffer.append",
                                         "audio": audio_b64,
                                     }
-                                )                
+                                )
                             )
                             print(
                                 f"📤 Sent PCM16 audio to OpenAI ({len(pcm_data)} bytes)"
@@ -147,7 +146,6 @@ async def streamline(websocket: WebSocket) -> None:
                         try:
                             data = json.loads(message["text"])
                             if data.get("type") == "EOF" and not response_active:
-
                                 print(
                                     f"🛑 Received EOF with {audio_buffer_size} bytes "
                                     f"of total audio"
@@ -222,7 +220,11 @@ async def streamline(websocket: WebSocket) -> None:
             Returns:
                 None
             """
-            nonlocal response_active, assistant_audio_buffer, assistant_text_buffer, user_text_buffer
+            nonlocal \
+                response_active, \
+                assistant_audio_buffer, \
+                assistant_text_buffer, \
+                user_text_buffer
 
             try:
                 async for message in openai_ws:
@@ -244,19 +246,27 @@ async def streamline(websocket: WebSocket) -> None:
 
                     elif event_type == "response.audio_transcript.delta":
                         text_delta = event.get("delta", "")
-                        print(f"Received assistant audio_transcript delta: {text_delta}") 
+                        print(
+                            f"Received assistant audio_transcript delta: {text_delta}"
+                        )
                         if text_delta:
                             assistant_text_buffer.append(text_delta)
                             print(f"📝 Text response: {text_delta}")
 
-                    elif event_type == "conversation.item.input_audio_transcription.completed":
+                    elif (
+                        event_type
+                        == "conversation.item.input_audio_transcription.completed"
+                    ):
                         # Handle user transcript - same as code 2
                         transcript = event.get("transcript", "")
                         print(f"📝 User said: {transcript}")
                         if transcript:
                             user_text_buffer.append(transcript)
 
-                    elif event_type == "conversation.item.input_audio_transcription.failed":
+                    elif (
+                        event_type
+                        == "conversation.item.input_audio_transcription.failed"
+                    ):
                         # Handle transcription failures
                         error = event.get("error", {})
                         print(f"🔴 User transcription failed: {error}")
@@ -274,12 +284,15 @@ async def streamline(websocket: WebSocket) -> None:
                         item = event.get("item", {})
                         item_type = item.get("type", "")
                         print(f"💬 Conversation item created: type={item_type}")
-                        
+
                         # Check if this is a user message with transcript
                         if item_type == "message" and item.get("role") == "user":
                             content = item.get("content", [])
                             for content_part in content:
-                                if content_part.get("type") == "input_audio" and "transcript" in content_part:
+                                if (
+                                    content_part.get("type") == "input_audio"
+                                    and "transcript" in content_part
+                                ):
                                     transcript = content_part["transcript"]
                                     print(f"📝 User said (from content): {transcript}")
                                     if transcript:
@@ -296,23 +309,26 @@ async def streamline(websocket: WebSocket) -> None:
                         }
 
                         print("📝 Full conversation:")
-                        print(json.dumps(assistant_responses, indent=2, ensure_ascii=False))
+                        print(
+                            json.dumps(
+                                assistant_responses, indent=2, ensure_ascii=False
+                            )
+                        )
 
                         if s3_service:
                             await asyncio.to_thread(
                                 s3_service.upload_text_streamline,
-                                json.dumps(assistant_responses, ensure_ascii=False, indent=2), 
-                                f"{session_id}_conversation.json",                             
-                                "application/json",                                          
-                                {
-                                    "session_id": session_id,
-                                    "type": "conversation_log"
-                                }                                                             
+                                json.dumps(
+                                    assistant_responses, ensure_ascii=False, indent=2
+                                ),
+                                f"{session_id}_conversation.json",
+                                "application/json",
+                                {"session_id": session_id, "type": "conversation_log"},
                             )
-                        #clear
+                        # clear
                         assistant_text_buffer = []
                         user_text_buffer = []
-                                                
+
                         # Save assistant audio to S3 if available
                         if assistant_audio_buffer and s3_service:
                             try:

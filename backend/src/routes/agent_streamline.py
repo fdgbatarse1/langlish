@@ -9,12 +9,11 @@ import websockets
 import aiohttp
 from src.config import OPENAI_API_KEY
 from src.services.s3_service import s3_service
-from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm 
+from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm
 
 # LangGraph imports
 from langgraph.graph import StateGraph, END
 from typing_extensions import TypedDict
-
 
 
 OPENAI_WS_URL = (
@@ -27,20 +26,22 @@ agent_realtime_router = APIRouter()
 async def fetch_dictionary_definition(word: str) -> Dict[str, Any]:
     """
     Fetch word definition from the free dictionary API.
-    
+
     Args:
         word: The word to look up
-        
+
     Returns:
         Dictionary containing definition data or error info
     """
     url = f"https://api.dictionaryapi.dev/api/v2/entries/en/{word.lower().strip()}"
     print(f"📖 Calling dictionary API for word: {word}")
     print(f"🌐 URL: {url}")
-    
+
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as response:
+            async with session.get(
+                url, timeout=aiohttp.ClientTimeout(total=3)
+            ) as response:
                 print(f"📡 Dictionary API response status: {response.status}")
                 if response.status == 200:
                     data = await response.json()
@@ -50,7 +51,7 @@ async def fetch_dictionary_definition(word: str) -> Dict[str, Any]:
                         # Extract key information
                         meanings = entry.get("meanings", [])
                         phonetics = entry.get("phonetics", [])
-                        
+
                         # Get first definition and example
                         definition = ""
                         example = ""
@@ -58,34 +59,40 @@ async def fetch_dictionary_definition(word: str) -> Dict[str, Any]:
                             # Each meaning has multiple definitions
                             for meaning in meanings:
                                 definitions = meaning.get("definitions", [])
-                                if definitions and not definition:  # Get the first available definition
+                                if (
+                                    definitions and not definition
+                                ):  # Get the first available definition
                                     definition = definitions[0].get("definition", "")
                                     example = definitions[0].get("example", "")
                                     break  # Stop after finding the first definition
-                        
+
                         # Get audio URL if available
                         audio_url = ""
                         for phonetic in phonetics:
                             if phonetic.get("audio"):
                                 audio_url = phonetic["audio"]
                                 break
-                        
+
                         print(f"✅ Found definition for '{word}': {definition[:50]}...")
                         return {
                             "found": True,
                             "word": word,
                             "definition": definition,
                             "example": example,
-                            "audio_url": audio_url
+                            "audio_url": audio_url,
                         }
                     else:
                         # No data returned even though status is 200
                         print(f"⚠️ No data returned for word: {word}")
-                        return {"found": False, "word": word, "error": "No data returned"}
+                        return {
+                            "found": False,
+                            "word": word,
+                            "error": "No data returned",
+                        }
                 else:
                     print(f"❌ Word '{word}' not found in dictionary")
                     return {"found": False, "word": word, "error": "Word not found"}
-                    
+
     except asyncio.TimeoutError:
         print(f"⚠️ Dictionary API timeout for word: {word}")
         return {"found": False, "word": word, "error": "Request timeout"}
@@ -97,6 +104,7 @@ async def fetch_dictionary_definition(word: str) -> Dict[str, Any]:
 # LangGraph State Definition
 class ConversationState(TypedDict):
     """State for the conversation workflow"""
+
     websocket: WebSocket
     session_id: str
     openai_ws: Any
@@ -114,14 +122,14 @@ class ConversationState(TypedDict):
 def create_langlish_workflow():
     """Create the LangGraph workflow for Langlish agent"""
     workflow = StateGraph(ConversationState)
-    
+
     # Add the langlish node
     workflow.add_node("langlish", langlish_node)
-    
+
     # Define the flow: START -> langlish -> END
     workflow.set_entry_point("langlish")
     workflow.add_edge("langlish", END)
-    
+
     return workflow.compile()
 
 
@@ -132,17 +140,17 @@ async def langlish_node(state: ConversationState) -> ConversationState:
     """
     websocket = state["websocket"]
     session_id = state["session_id"]
-    
+
     openai_ws = None
     audio_buffer_size = state["audio_buffer_size"]
     response_active = state["response_active"]
     user_audio_buffer = state["user_audio_buffer"]
     assistant_audio_buffer = state["assistant_audio_buffer"]
-    
+
     # Add text buffers for S3 conversation saving
     user_text_buffer: List[str] = []
     assistant_text_buffer: List[str] = []
-    
+
     try:
         print("🔗 Connecting to OpenAI WebSocket...")
         openai_ws = await websockets.connect(
@@ -162,9 +170,7 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                 "voice": "alloy",
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
-                "input_audio_transcription": {
-                    "model": "whisper-1"
-                },
+                "input_audio_transcription": {"model": "whisper-1"},
                 "turn_detection": {
                     "type": "server_vad",
                     "threshold": 0.5,
@@ -197,14 +203,14 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                             "properties": {
                                 "word": {
                                     "type": "string",
-                                    "description": "The English word to look up (e.g., 'computer', 'desk', 'happiness')"
+                                    "description": "The English word to look up (e.g., 'computer', 'desk', 'happiness')",
                                 }
                             },
-                            "required": ["word"]
-                        }
+                            "required": ["word"],
+                        },
                     }
                 ],
-                "tool_choice": "auto"
+                "tool_choice": "auto",
             },
         }
         await openai_ws.send(json.dumps(session_config))
@@ -334,7 +340,11 @@ async def langlish_node(state: ConversationState) -> ConversationState:
             Returns:
                 None
             """
-            nonlocal response_active, assistant_audio_buffer, user_text_buffer, assistant_text_buffer
+            nonlocal \
+                response_active, \
+                assistant_audio_buffer, \
+                user_text_buffer, \
+                assistant_text_buffer
 
             try:
                 async for message in openai_ws:
@@ -357,86 +367,102 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                     elif event_type == "response.text.delta":
                         text_delta = event.get("delta", "")
                         print(f"📝 Text response: {text_delta}")
-                    
+
                     elif event_type == "response.audio_transcript.delta":
                         # Log what the assistant is saying and store for S3
                         transcript_delta = event.get("delta", "")
                         print(f"🗣️ Assistant saying: {transcript_delta}")
                         if transcript_delta:
                             assistant_text_buffer.append(transcript_delta)
-                    
+
                     elif event_type == "response.audio_transcript.done":
                         # Log the complete transcript of what the assistant said
                         full_transcript = event.get("transcript", "")
                         print(f"🗣️ Assistant complete response: {full_transcript}")
-                    
+
                     elif event_type == "response.output_item.added":
                         # Log when a new output item is added
                         item = event.get("item", {})
-                        print(f"📋 Output item added: type={item.get('type')}, status={item.get('status')}")
+                        print(
+                            f"📋 Output item added: type={item.get('type')}, status={item.get('status')}"
+                        )
                         if item.get("type") == "function_call":
                             print(f"🔧 Function call detected: {item.get('name')}")
-                    
+
                     elif event_type == "response.function_call_arguments.delta":
                         # Log streaming function arguments
                         delta = event.get("delta", "")
                         print(f"🔧 Function args delta: {delta}")
-                    
+
                     elif event_type == "response.function_call_arguments.done":
                         # Function call complete, execute it
                         call_id = event.get("call_id")
                         name = event.get("name")
                         arguments = event.get("arguments", "{}")
-                        
+
                         print(f"🔧 Function call: {name} with args: {arguments}")
-                        
+
                         if name == "get_dictionary_definition":
                             try:
                                 args = json.loads(arguments)
                                 word = args.get("word", "")
-                                
+
                                 if word:
                                     print(f"📚 Looking up word: {word}")
-                                    definition_data = await fetch_dictionary_definition(word)
-                                    
+                                    definition_data = await fetch_dictionary_definition(
+                                        word
+                                    )
+
                                     # Log the actual API response
                                     print("📊 Dictionary API returned:")
                                     print(f"   Found: {definition_data.get('found')}")
                                     print(f"   Word: {definition_data.get('word')}")
-                                    print(f"   Definition: {definition_data.get('definition', 'N/A')}")
-                                    print(f"   Example: {definition_data.get('example', 'N/A')}")
-                                    print(f"   Audio URL: {definition_data.get('audio_url', 'N/A')}")
-                                    
+                                    print(
+                                        f"   Definition: {definition_data.get('definition', 'N/A')}"
+                                    )
+                                    print(
+                                        f"   Example: {definition_data.get('example', 'N/A')}"
+                                    )
+                                    print(
+                                        f"   Audio URL: {definition_data.get('audio_url', 'N/A')}"
+                                    )
+
                                     # Prepare the output to send to OpenAI
                                     output_data = {
                                         "found": definition_data["found"],
                                         "word": definition_data["word"],
-                                        "definition": definition_data.get("definition", ""),
+                                        "definition": definition_data.get(
+                                            "definition", ""
+                                        ),
                                         "example": definition_data.get("example", ""),
-                                        "audio_url": definition_data.get("audio_url", "")
+                                        "audio_url": definition_data.get(
+                                            "audio_url", ""
+                                        ),
                                     }
-                                    
-                                    print(f"📤 Sending to OpenAI: {json.dumps(output_data, indent=2)}")
-                                    
+
+                                    print(
+                                        f"📤 Sending to OpenAI: {json.dumps(output_data, indent=2)}"
+                                    )
+
                                     # Send function result back
                                     function_result = {
                                         "type": "conversation.item.create",
                                         "item": {
                                             "type": "function_call_output",
                                             "call_id": call_id,
-                                            "output": json.dumps(output_data)
-                                        }
+                                            "output": json.dumps(output_data),
+                                        },
                                     }
-                                    
+
                                     await openai_ws.send(json.dumps(function_result))
                                     print("📤 Sent dictionary result to OpenAI")
-                                    
+
                                     # Request response after function result
-                                    await openai_ws.send(json.dumps({
-                                        "type": "response.create"
-                                    }))
+                                    await openai_ws.send(
+                                        json.dumps({"type": "response.create"})
+                                    )
                                     print("📤 Requested response generation")
-                                    
+
                             except Exception as e:
                                 print(f"🔴 Error handling function call: {e}")
                                 # Send error result
@@ -445,26 +471,36 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                                     "item": {
                                         "type": "function_call_output",
                                         "call_id": call_id,
-                                        "output": json.dumps({
-                                            "error": f"Failed to look up word: {str(e)}"
-                                        })
-                                    }
+                                        "output": json.dumps(
+                                            {
+                                                "error": f"Failed to look up word: {str(e)}"
+                                            }
+                                        ),
+                                    },
                                 }
                                 await openai_ws.send(json.dumps(error_result))
-                                await openai_ws.send(json.dumps({"type": "response.create"}))
-                    
+                                await openai_ws.send(
+                                    json.dumps({"type": "response.create"})
+                                )
+
                     elif event_type == "response.output_item.done":
                         # Log output item completion but don't handle function calls here
                         # They're already handled in response.function_call_arguments.done
                         item = event.get("item", {})
-                        print(f"📋 Output item completed: type={item.get('type')}, status={item.get('status')}")
-                    
+                        print(
+                            f"📋 Output item completed: type={item.get('type')}, status={item.get('status')}"
+                        )
+
                     elif event_type == "conversation.item.created":
                         # Log conversation items for debugging
                         item = event.get("item", {})
-                        print(f"💬 Conversation item created: type={item.get('type')}, role={item.get('role', 'N/A')}")
+                        print(
+                            f"💬 Conversation item created: type={item.get('type')}, role={item.get('role', 'N/A')}"
+                        )
                         if item.get("type") == "function_call":
-                            print(f"   Function: {item.get('name')}, Call ID: {item.get('call_id')}")
+                            print(
+                                f"   Function: {item.get('name')}, Call ID: {item.get('call_id')}"
+                            )
                             print(f"   Arguments: {item.get('arguments')}")
                         elif item.get("type") == "function_call_output":
                             print("   ✅ Function output acknowledged by OpenAI")
@@ -475,13 +511,21 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                                 print(f"   Output data: {json.dumps(output, indent=2)}")
                             except json.JSONDecodeError:
                                 print(f"   Raw output: {item.get('output')}")
-                        elif item.get("type") == "message" and item.get("role") == "assistant":
+                        elif (
+                            item.get("type") == "message"
+                            and item.get("role") == "assistant"
+                        ):
                             # Assistant is generating a response
                             content = item.get("content", [])
                             if content:
-                                print(f"   🤖 Assistant starting response with {len(content)} content parts")
-                    
-                    elif event_type == "conversation.item.input_audio_transcription.completed":
+                                print(
+                                    f"   🤖 Assistant starting response with {len(content)} content parts"
+                                )
+
+                    elif (
+                        event_type
+                        == "conversation.item.input_audio_transcription.completed"
+                    ):
                         # Handle user transcript and store for S3
                         transcript = event.get("transcript", "")
                         print(f"📝 User said: {transcript}")
@@ -500,18 +544,21 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                         }
 
                         print("📝 Full conversation:")
-                        print(json.dumps(assistant_responses, indent=2, ensure_ascii=False))
+                        print(
+                            json.dumps(
+                                assistant_responses, indent=2, ensure_ascii=False
+                            )
+                        )
 
                         if s3_service:
                             await asyncio.to_thread(
                                 s3_service.upload_text_agent_streamline,
-                                json.dumps(assistant_responses, ensure_ascii=False, indent=2), 
-                                f"{session_id}_conversation.json",                             
-                                "application/json",                                          
-                                {
-                                    "session_id": session_id,
-                                    "type": "conversation_log"
-                                }                                                             
+                                json.dumps(
+                                    assistant_responses, ensure_ascii=False, indent=2
+                                ),
+                                f"{session_id}_conversation.json",
+                                "application/json",
+                                {"session_id": session_id, "type": "conversation_log"},
                             )
                         # Clear text buffers
                         assistant_text_buffer = []
@@ -581,7 +628,7 @@ async def langlish_node(state: ConversationState) -> ConversationState:
         if openai_ws:
             await openai_ws.close()
             print("✅ OpenAI WebSocket closed")
-    
+
     # Update state before returning
     state["completed"] = True
     state["openai_ws"] = openai_ws
@@ -589,7 +636,7 @@ async def langlish_node(state: ConversationState) -> ConversationState:
     state["response_active"] = response_active
     state["user_audio_buffer"] = user_audio_buffer
     state["assistant_audio_buffer"] = assistant_audio_buffer
-    
+
     return state
 
 
@@ -617,7 +664,7 @@ async def agent_streamline(websocket: WebSocket) -> None:
 
     # Create the LangGraph workflow
     workflow = create_langlish_workflow()
-    
+
     # Initialize the conversation state
     initial_state = ConversationState(
         websocket=websocket,
@@ -630,15 +677,15 @@ async def agent_streamline(websocket: WebSocket) -> None:
         completed=False,
         user_transcript="",
         dictionary_word="",
-        needs_dictionary=False
+        needs_dictionary=False,
     )
-    
+
     try:
         # Execute the workflow
         print("🚀 Starting LangGraph workflow...")
         await workflow.ainvoke(initial_state)
         print("✅ LangGraph workflow completed")
-        
+
     except Exception as e:
         print(f"💥 Error in LangGraph workflow: {e}")
         try:
