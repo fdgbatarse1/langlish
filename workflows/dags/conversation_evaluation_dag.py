@@ -197,6 +197,14 @@ Score 3: Some grammar/vocab mistakes, but conversation is still clear overall.
 Score 4: Minor issues, mostly correct usage throughout the session.
 Score 5: Grammar and vocabulary are accurate and natural throughout the entire conversation.
 """,
+"fluency_practice_score": """
+Fluency Practice Score Rubric:
+Score 1: No encouragement for continued practice. Conversation ends abruptly without follow-up questions or challenges.
+Score 2: Minimal encouragement. Rarely asks follow-up questions or provides new challenges to keep user engaged.
+Score 3: Some encouragement present. Occasionally asks questions or suggests new topics, but inconsistently throughout the session.
+Score 4: Good encouragement. Regularly asks follow-up questions, introduces new challenges, and motivates continued practice.
+Score 5: Excellent encouragement. Consistently asks engaging questions, provides progressive challenges, and actively motivates user to continue practicing with enthusiasm.
+""",
     }
     
     results = {
