@@ -282,6 +282,10 @@ def group_conversations_by_session(**context):
         logging.warning("No conversation data received")
         return {}
     
+    # Debug: Print first conversation to see data structure
+    if all_conversations:
+        logging.info(f"Sample conversation data structure: {json.dumps(all_conversations[0], indent=2)}")
+    
     sessions_grouped = defaultdict(list)
     
     for conversation in all_conversations:
@@ -310,15 +314,27 @@ def merge_sessions_data(**context):
         for item in session_data_list:
             session_id = item["session_id"]
             merged[session_id]["session_id"] = session_id
-            merged[session_id]["user"].append(item.get("student_message", ""))
-            merged[session_id]["assistant"].append(item.get("model_response", ""))
+            
+            # Get user and assistant text - handle both individual strings and already-joined text
+            user_text = item.get("user", "")
+            assistant_text = item.get("assistant", "")
+            
+            # If the data is already joined (not a list), append it directly
+            if user_text:
+                merged[session_id]["user"].append(user_text)
+            if assistant_text:
+                merged[session_id]["assistant"].append(assistant_text)
 
         result = []
         for session_id, convo in merged.items():
+            # Filter out empty strings before joining
+            user_messages = [msg for msg in convo["user"] if msg]
+            assistant_messages = [msg for msg in convo["assistant"] if msg]
+            
             result.append({
                 "session_id": session_id,
-                "user": " ".join(convo["user"]),
-                "assistant": " ".join(convo["assistant"])
+                "user": " ".join(user_messages),
+                "assistant": " ".join(assistant_messages)
             })
 
         return result
@@ -327,6 +343,19 @@ def merge_sessions_data(**context):
     
     for session_id, session_conversations in sessions_grouped.items():
         try:
+            # Log what we're merging
+            logging.info(f"Merging session {session_id} with {len(session_conversations)} conversation(s)")
+            
+            # If there's only one conversation for this session, it's likely already complete
+            if len(session_conversations) == 1:
+                conv = session_conversations[0]
+                # Check if it already has joined text
+                if conv.get("user") and conv.get("assistant"):
+                    logging.info(f"Session {session_id} already has complete conversation data")
+                    all_merged_sessions.append(conv)
+                    continue
+            
+            # Otherwise, merge multiple conversations
             merged_session = merge_sessions(session_conversations)
             all_merged_sessions.extend(merged_session)
             
@@ -335,6 +364,16 @@ def merge_sessions_data(**context):
             continue
     
     logging.info(f"Merged {len(all_merged_sessions)} complete sessions")
+    
+    # Debug: Print a sample merged session
+    if all_merged_sessions:
+        sample = all_merged_sessions[0]
+        logging.info(f"Sample merged session:")
+        logging.info(f"  Session ID: {sample['session_id']}")
+        logging.info(f"  User text length: {len(sample['user'])} chars")
+        logging.info(f"  Assistant text length: {len(sample['assistant'])} chars")
+        logging.info(f"  User preview: {sample['user'][:200]}..." if len(sample['user']) > 200 else f"  User: {sample['user']}")
+        logging.info(f"  Assistant preview: {sample['assistant'][:200]}..." if len(sample['assistant']) > 200 else f"  Assistant: {sample['assistant']}")
     
     return all_merged_sessions
 
