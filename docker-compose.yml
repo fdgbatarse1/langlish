@@ -20,13 +20,15 @@ x-airflow-common:
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     AIRFLOW__API_AUTH__JWT_SECRET: 'your-secure-jwt-secret-here-change-in-production'
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-mlflow boto3 openai}
+    MLFLOW_TRACKING_URI: 'http://mlflow:5000'
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
   volumes:
     - ${AIRFLOW_PROJ_DIR:-./workflows}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-./workflows}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-./workflows}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-./workflows}/plugins:/opt/airflow/plugins
+    - mlflow-artifacts-volume:/mlflow/mlartifacts
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -34,6 +36,8 @@ x-airflow-common:
       condition: service_healthy
     postgres:
       condition: service_healthy
+    mlflow:
+      condition: service_started
   networks:
     - langlish-network
 
@@ -98,14 +102,20 @@ services:
     environment:
       - MLFLOW_BACKEND_STORE_URI=sqlite:///mlflow/mlruns.db
       - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/mlartifacts
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_S3_BUCKET_NAME=${AWS_S3_BUCKET_NAME}
+      - AWS_S3_REGION=${AWS_S3_REGION:-us-east-1}
     volumes:
       - ./lifecycle:/mlflow
+      - mlflow-artifacts-volume:/mlflow/mlartifacts
     command: >
       mlflow server
       --backend-store-uri sqlite:///mlflow/mlruns.db
       --default-artifact-root /mlflow/mlartifacts
       --host 0.0.0.0
       --port 5000
+      --serve-artifacts
     restart: unless-stopped
     networks:
       - langlish-network
@@ -301,6 +311,7 @@ services:
 # Volumes
 volumes:
   postgres-db-volume:
+  mlflow-artifacts-volume:
 
 # Networks
 networks:

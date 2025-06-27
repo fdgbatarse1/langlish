@@ -14,8 +14,8 @@ from decimal import Decimal
 import mlflow
 
 # MLflow tracking URI from environment
-# Use file-based tracking for local development
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "file:///opt/airflow/mlruns")
+# Use MLflow server for tracking
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 
 # Default session configuration used in production
 # This represents the actual configuration used by the Langlish assistant
