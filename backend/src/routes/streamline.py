@@ -3,18 +3,25 @@ import base64
 import asyncio
 import uuid
 from typing import Dict, Any, List
-
+import os
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import websockets
 from src.config import OPENAI_API_KEY
 from src.services.s3_service import s3_service
 from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm
+import mlflow
+
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 
 OPENAI_WS_URL = (
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
 )
 
 realtime_router = APIRouter()
+
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+streamline_instructions = mlflow.load_prompt("prompts:/streamline-instructions/1")
 
 
 @realtime_router.websocket("/streamline")
@@ -78,14 +85,7 @@ async def streamline(websocket: WebSocket) -> None:
                     "silence_duration_ms": 500,
                     "create_response": True,
                 },
-                "instructions": (
-                    "You are Langlish, a friendly and patient English learning "
-                    "assistant. You help students improve their English through "
-                    "conversation practice. Your role is to: help the user practice "
-                    "english conversation, correct grammar mistakes gently, suggest "
-                    "better vocabulary when appropriate, encourage the student, and "
-                    "adapt to the student's level."
-                ),
+                "instructions": streamline_instructions.template,
             },
         }
         await openai_ws.send(json.dumps(session_config))

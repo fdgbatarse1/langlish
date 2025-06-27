@@ -3,17 +3,18 @@ import base64
 import asyncio
 import uuid
 from typing import Dict, Any, List
-
+import os
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import websockets
 import aiohttp
 from src.config import OPENAI_API_KEY
 from src.services.s3_service import s3_service
 from src.utils.audio import convert_webm_to_pcm16, convert_pcm16_to_webm
-
-# LangGraph imports
+import mlflow
 from langgraph.graph import StateGraph, END
 from typing_extensions import TypedDict
+
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 
 
 OPENAI_WS_URL = (
@@ -21,6 +22,16 @@ OPENAI_WS_URL = (
 )
 
 agent_realtime_router = APIRouter()
+
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+
+agent_streamline_instructions = mlflow.load_prompt(
+    "prompts:/agent-streamline-instructions/1"
+)
+agent_streamline_get_dictionary_definition_description = mlflow.load_prompt(
+    "prompts:/agent-streamline-get-dictionary-definition-description/1"
+)
 
 
 async def fetch_dictionary_definition(word: str) -> Dict[str, Any]:
@@ -178,26 +189,12 @@ async def langlish_node(state: ConversationState) -> ConversationState:
                     "silence_duration_ms": 500,
                     "create_response": True,
                 },
-                "instructions": (
-                    "You are Langlish, a friendly and patient English learning "
-                    "assistant. You help students improve their English through "
-                    "conversation practice. Your role is to: help the user practice "
-                    "english conversation, correct grammar mistakes gently, suggest "
-                    "better vocabulary when appropriate, encourage the student, and "
-                    "adapt to the student's level. When you receive dictionary "
-                    "information, explain it in a clear and educational way. "
-                    "IMPORTANT: When a user asks for the definition, meaning, or explanation "
-                    "of a word, always use the get_dictionary_definition function to look it up "
-                    "before providing your explanation. CRITICAL: Listen very carefully to identify "
-                    "the EXACT word the user is asking about - it's usually the last significant noun "
-                    "after phrases like 'definition of', 'meaning of', or 'what is'. If unsure, "
-                    "repeat back what word you're about to look up to confirm."
-                ),
+                "instructions": agent_streamline_instructions.template,
                 "tools": [
                     {
                         "type": "function",
                         "name": "get_dictionary_definition",
-                        "description": "Get the dictionary definition of any English word when the user asks for its meaning, definition, or wants to understand what a word means",
+                        "description": agent_streamline_get_dictionary_definition_description.template,
                         "parameters": {
                             "type": "object",
                             "properties": {
