@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from src.models.greeting_response import GreetingResponse
 from src.routes.agent_streamline import agent_realtime_router
 from src.routes.streamline import realtime_router
@@ -33,6 +34,22 @@ app = FastAPI(
     title="Langlish - English Learning Voice Assistant",
     description="A voice-based English learning assistant using AI",
     version="1.0.0",
+)
+
+# Configure CORS
+origins = [
+    "http://localhost:5173",  # Frontend development server
+    "http://localhost:3000",  # Alternative frontend port
+    "http://127.0.0.1:5173",  # Alternative localhost
+    "http://127.0.0.1:3000",  # Alternative localhost
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(realtime_router)

@@ -2,7 +2,10 @@ import { Mic } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import useWebSocket, { ReadyState } from 'react-use-websocket'
 
-const socketUrl = 'ws://localhost:8000/agent-streamline'
+// Use environment variable with fallback to localhost for development
+const socketUrl = import.meta.env.VITE_WS_URL
+  ? `${import.meta.env.VITE_WS_URL}/agent-streamline`
+  : 'ws://localhost:8000/agent-streamline'
 
 const App = () => {
   const [recording, setRecording] = useState(false)
