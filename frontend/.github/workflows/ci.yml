@@ -11,6 +11,13 @@ on:
     paths:
       - 'frontend/**'
       - '.github/workflows/ci.yml'
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: 'Run with debug logging'
+        required: false
+        default: false
 
 defaults:
   run:
