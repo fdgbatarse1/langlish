@@ -23,6 +23,7 @@ mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 streamline_instructions = mlflow.load_prompt("prompts:/streamline-instructions/1")
 
+
 @realtime_router.websocket("/streamline")
 async def streamline(websocket: WebSocket) -> None:
     """

@@ -28,7 +28,9 @@ agent_realtime_router = APIRouter()
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 
-agent_streamline_instructions = mlflow.load_prompt("prompts:/agent-streamline-instructions/1")
+agent_streamline_instructions = mlflow.load_prompt(
+    "prompts:/agent-streamline-instructions/1"
+)
 agent_streamline_get_dictionary_definition_description = mlflow.load_prompt(
     "prompts:/agent-streamline-get-dictionary-definition-description/1"
 )
