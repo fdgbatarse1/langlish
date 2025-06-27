@@ -4,10 +4,10 @@ import useWebSocket, { ReadyState } from 'react-use-websocket'
 
 // Use environment variable with fallback to localhost for development
 const socketUrl = import.meta.env.VITE_WS_URL
-  ? `${import.meta.env.VITE_WS_URL}/agent-streamline`
-  : 'ws://localhost:8000/agent-streamline'
+  ? `${import.meta.env.VITE_WS_URL}/streamline`
+  : 'ws://localhost:8000/streamline'
 
-const App = () => {
+const Streamline = () => {
   const [recording, setRecording] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder>()
   const audioContextRef = useRef<AudioContext>()
@@ -144,22 +144,20 @@ const App = () => {
   }, [])
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center">
-      <button
-        onClick={recording ? stopRecording : startRecording}
-        disabled={readyState !== ReadyState.OPEN}
-        className={`flex size-24 items-center justify-center rounded-full text-white transition-colors ${
-          recording
-            ? 'bg-red-500 hover:bg-red-600'
-            : 'bg-blue-500 hover:bg-blue-600'
-        } ${
-          readyState !== ReadyState.OPEN ? 'cursor-not-allowed opacity-50' : ''
-        }`}
-      >
-        <Mic className={recording ? 'animate-pulse' : ''} />
-      </button>
-    </div>
+    <button
+      onClick={recording ? stopRecording : startRecording}
+      disabled={readyState !== ReadyState.OPEN}
+      className={`flex size-24 items-center justify-center rounded-full text-white transition-colors ${
+        recording
+          ? 'bg-red-500 hover:bg-red-600'
+          : 'bg-green-500 hover:bg-green-600'
+      } ${
+        readyState !== ReadyState.OPEN ? 'cursor-not-allowed opacity-50' : ''
+      }`}
+    >
+      <Mic className={recording ? 'animate-pulse' : ''} />
+    </button>
   )
 }
 
-export default App
+export default Streamline

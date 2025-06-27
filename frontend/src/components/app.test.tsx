@@ -15,12 +15,12 @@ vi.mock('react-use-websocket', () => ({
   }
 }))
 
-import App from './App'
+import App from './app'
 
 describe('App', () => {
   it('renders without crashing', () => {
     render(<App />)
-    const button = screen.getByRole('button')
-    expect(button).toBeInTheDocument()
+    expect(screen.getByText('Streamline')).toBeInTheDocument()
+    expect(screen.getByText('Agent Streamline')).toBeInTheDocument()
   })
 })
