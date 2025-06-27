@@ -166,11 +166,27 @@ def setup_mlflow():
     mlflow.set_experiment("ConversationEvaluation")
 
 # Evaluation implementation
-def evaluate_session(session_data: Dict) -> dict:
-    """Evaluate an entire conversation session."""
-    session_id = session_data["session_id"]
-    user_text = session_data["user"]
-    assistant_text = session_data["assistant"]
+def evaluate_conversation_turn(turn_data: Dict) -> dict:
+    """Evaluate a single conversation turn (one exchange between user and assistant)."""
+    session_id = turn_data["session_id"]
+    user_text = turn_data["user"]
+    assistant_text = turn_data["assistant"]
+    
+    logging.info(f"Starting evaluation for session {session_id}")
+    logging.info(f"User text: {len(user_text)} chars, Assistant text: {len(assistant_text)} chars")
+    
+    # Skip evaluation if either text is empty
+    if not user_text.strip() or not assistant_text.strip():
+        logging.warning(f"Skipping evaluation for session {session_id} - empty user or assistant text")
+        return {
+            "session_id": session_id,
+            "metrics": {
+                metric: {
+                    "score": None,
+                    "reasoning": "Empty conversation content"
+                } for metric in metric_rubrics.keys()
+            }
+        }
     
     metric_rubrics = {
         "clarity_score": """
@@ -215,8 +231,25 @@ Score 5: Excellent encouragement. Consistently asks engaging questions, provides
     # Get OpenAI API key from environment
     openai.api_key = os.environ.get("OPENAI_API_KEY")
     
+    if not openai.api_key:
+        logging.error("OPENAI_API_KEY not set in environment variables")
+        return {
+            "session_id": session_id,
+            "metrics": {
+                metric: {
+                    "score": None,
+                    "reasoning": "OpenAI API key not configured"
+                } for metric in metric_rubrics.keys()
+            }
+        }
+    
     for metric_name, rubric in metric_rubrics.items():
         try:
+            # Truncate very long conversations to avoid API limits
+            max_chars = 4000  # Leave room for the rubric and instructions
+            truncated_user = user_text[:max_chars] + "..." if len(user_text) > max_chars else user_text
+            truncated_assistant = assistant_text[:max_chars] + "..." if len(assistant_text) > max_chars else assistant_text
+            
             # Create evaluation prompt
             prompt = f"""
 You are evaluating a conversation between an English learning assistant and a student.
@@ -224,10 +257,10 @@ You are evaluating a conversation between an English learning assistant and a st
 {rubric}
 
 User Messages:
-{user_text}
+{truncated_user}
 
 Assistant Responses:
-{assistant_text}
+{truncated_assistant}
 
 Provide your evaluation as a JSON object with:
 - "score": integer from 1-5
@@ -235,6 +268,7 @@ Provide your evaluation as a JSON object with:
 """
             
             # Call OpenAI API for evaluation
+            logging.info(f"Calling OpenAI API for {metric_name}...")
             response = openai.chat.completions.create(
                 model="gpt-4o",
                 messages=[
@@ -242,11 +276,13 @@ Provide your evaluation as a JSON object with:
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.2
+                temperature=0.2,
+                timeout=60  # Add timeout
             )
             
             evaluation = json.loads(response.choices[0].message.content)
             results["metrics"][metric_name] = evaluation
+            logging.info(f"Successfully evaluated {metric_name}: score={evaluation.get('score')}")
             
         except Exception as e:
             logging.error(f"Error evaluating {metric_name} for session {session_id}: {str(e)}")
@@ -257,22 +293,32 @@ Provide your evaluation as a JSON object with:
     
     return results
 
-def evaluate_multiple_sessions(merged_sessions: List[Dict]) -> List[Dict]:
-    """Evaluate multiple conversation sessions."""
+def evaluate_multiple_conversation_turns(conversation_turns: List[Dict]) -> List[Dict]:
+    """Evaluate multiple conversation turns individually."""
     results = []
     
-    for session in merged_sessions:
-        logging.info(f"Evaluating session: {session['session_id']}")
-        evaluation_result = evaluate_session(session)
+    for i, turn in enumerate(conversation_turns):
+        logging.info(f"Evaluating conversation {i+1}/{len(conversation_turns)} from session: {turn['session_id']}")
+        start_time = datetime.now()
+        evaluation_result = evaluate_conversation_turn(turn)
+        end_time = datetime.now()
+        logging.info(f"Completed evaluation {i+1} in {(end_time - start_time).total_seconds():.2f} seconds")
         results.append(evaluation_result)
     
+    logging.info(f"Completed all {len(conversation_turns)} evaluations")
     return results
 
 # Task functions
 def pull_conversation(**context):
     """Pull conversations from S3."""
-    s3_service = S3Service() 
-    return s3_service.pull_conversations_from_s3(type="streamline")
+    try:
+        s3_service = S3Service() 
+        conversations = s3_service.pull_conversations_from_s3(type="streamline")
+        logging.info(f"Successfully pulled {len(conversations)} conversations from S3")
+        return conversations
+    except Exception as e:
+        logging.error(f"Failed to pull conversations from S3: {str(e)}")
+        return []
 
 def group_conversations_by_session(**context):
     """Group conversation data by session_id."""
@@ -300,82 +346,60 @@ def group_conversations_by_session(**context):
     return dict(sessions_grouped)
 
 def merge_sessions_data(**context):
-    """Merge conversation turns by session_id into complete conversations."""
+    """Merge conversation turns by session_id but create multiple conversation objects."""
     sessions_grouped = context['task_instance'].xcom_pull(task_ids='group_by_session')
     
     if not sessions_grouped:
         logging.warning("No grouped session data received")
         return []
     
-    def merge_sessions(session_data_list: List[Dict]) -> List[Dict]:
-        """Merge conversation turns by session_id into a single conversation per session."""
-        merged = defaultdict(lambda: {"session_id": "", "user": [], "assistant": []})
-
+    def process_session_conversations(session_data_list: List[Dict]) -> List[Dict]:
+        """Process conversations for a session - concatenate if needed but keep as separate objects."""
+        result = []
+        
         for item in session_data_list:
             session_id = item["session_id"]
-            merged[session_id]["session_id"] = session_id
             
-            # Get user and assistant text - handle both individual strings and already-joined text
-            user_text = item.get("user", "")
-            assistant_text = item.get("assistant", "")
-            
-            # If the data is already joined (not a list), append it directly
-            if user_text:
-                merged[session_id]["user"].append(user_text)
-            if assistant_text:
-                merged[session_id]["assistant"].append(assistant_text)
-
-        result = []
-        for session_id, convo in merged.items():
-            # Filter out empty strings before joining
-            user_messages = [msg for msg in convo["user"] if msg]
-            assistant_messages = [msg for msg in convo["assistant"] if msg]
-            
-            result.append({
+            # Each item from S3 is already a complete conversation
+            # Just ensure it has the right structure
+            conversation_obj = {
                 "session_id": session_id,
-                "user": " ".join(user_messages),
-                "assistant": " ".join(assistant_messages)
-            })
-
+                "user": item.get("user", "") or item.get("student_message", ""),
+                "assistant": item.get("assistant", "") or item.get("model_response", "")
+            }
+            
+            # Only add if both user and assistant have content
+            if conversation_obj["user"] and conversation_obj["assistant"]:
+                result.append(conversation_obj)
+            
         return result
     
-    all_merged_sessions = []
+    all_conversations = []
     
     for session_id, session_conversations in sessions_grouped.items():
         try:
-            # Log what we're merging
-            logging.info(f"Merging session {session_id} with {len(session_conversations)} conversation(s)")
+            logging.info(f"Processing session {session_id} with {len(session_conversations)} conversation(s)")
             
-            # If there's only one conversation for this session, it's likely already complete
-            if len(session_conversations) == 1:
-                conv = session_conversations[0]
-                # Check if it already has joined text
-                if conv.get("user") and conv.get("assistant"):
-                    logging.info(f"Session {session_id} already has complete conversation data")
-                    all_merged_sessions.append(conv)
-                    continue
-            
-            # Otherwise, merge multiple conversations
-            merged_session = merge_sessions(session_conversations)
-            all_merged_sessions.extend(merged_session)
+            processed_conversations = process_session_conversations(session_conversations)
+            all_conversations.extend(processed_conversations)
             
         except Exception as e:
-            logging.error(f"Error merging session {session_id}: {str(e)}")
+            logging.error(f"Error processing session {session_id}: {str(e)}")
             continue
     
-    logging.info(f"Merged {len(all_merged_sessions)} complete sessions")
+    logging.info(f"Total conversations to evaluate: {len(all_conversations)}")
     
-    # Debug: Print a sample merged session
-    if all_merged_sessions:
-        sample = all_merged_sessions[0]
-        logging.info(f"Sample merged session:")
+    # Debug: Print sample conversations
+    if all_conversations:
+        sample = all_conversations[0]
+        logging.info(f"Sample conversation:")
         logging.info(f"  Session ID: {sample['session_id']}")
         logging.info(f"  User text length: {len(sample['user'])} chars")
         logging.info(f"  Assistant text length: {len(sample['assistant'])} chars")
         logging.info(f"  User preview: {sample['user'][:200]}..." if len(sample['user']) > 200 else f"  User: {sample['user']}")
         logging.info(f"  Assistant preview: {sample['assistant'][:200]}..." if len(sample['assistant']) > 200 else f"  Assistant: {sample['assistant']}")
     
-    return all_merged_sessions
+    return all_conversations
 
 def evaluate_sessions(**context):
     """Evaluate sessions and log results to MLflow."""
@@ -386,34 +410,32 @@ def evaluate_sessions(**context):
         logging.warning("No merged sessions received")
         return []
     
-    results = evaluate_multiple_sessions(merged_sessions)
+    results = evaluate_multiple_conversation_turns(merged_sessions)
 
     # Use a parent run for the entire evaluation batch
     parent_run_name = f"airflow_eval_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     with mlflow.start_run(run_name=parent_run_name):
-        mlflow.log_param("num_sessions", len(merged_sessions))
+        mlflow.log_param("num_conversations", len(merged_sessions))
         mlflow.log_param("evaluation_type", "streamline_conversations")
 
-        for result in results:
+        for idx, result in enumerate(results):
             session_id = result["session_id"]
 
             # Find the corresponding session data for conversation history
-            session_data = next((s for s in merged_sessions if s["session_id"] == session_id), {})
+            session_data = next((s for s in merged_sessions if s["session_id"] == session_id and merged_sessions.index(s) == idx), {})
             
             # Use default session configuration
             session_config = DEFAULT_SESSION_CONFIG
 
-            # Create a nested run for this session
-            with mlflow.start_run(run_name=f"session_{session_id}", nested=True):
+            # Create a nested run for this conversation
+            with mlflow.start_run(run_name=f"conversation_{idx+1}_session_{session_id}", nested=True):
                 # Log configuration
                 model_version = session_config.get("model_version", "gpt-4o")
                 instructions = session_config.get("session", {}).get("instructions", "")
                 
-                # Note: MLflow Prompt Registry is not available in this version
-                # Instructions are logged as a text artifact instead
-                
                 mlflow.log_param("model_version", model_version)
                 mlflow.log_param("session_id", session_id)
+                mlflow.log_param("conversation_index", idx)
                 mlflow.log_text(instructions, "prompt.txt")
                 mlflow.log_dict(session_config, "session_config.json")
 
@@ -421,11 +443,12 @@ def evaluate_sessions(**context):
                 if session_data:
                     conversation_data = {
                         "session_id": session_id,
+                        "conversation_index": idx,
                         "user_messages": session_data.get("user", ""),
                         "assistant_messages": session_data.get("assistant", ""),
                         "conversation_length": len(session_data.get("user", "").split()) + len(session_data.get("assistant", "").split())
                     }
-                    mlflow.log_dict(conversation_data, f"conversations/{session_id}_conversation.json")
+                    mlflow.log_dict(conversation_data, f"conversation_{idx+1}.json")
                     mlflow.log_param("conversation_length_words", conversation_data["conversation_length"])
 
                 # Log evaluation metrics
@@ -435,7 +458,7 @@ def evaluate_sessions(**context):
                         mlflow.log_metric(f"{metric_name}", score)
                 
                 # Log full results artifact
-                mlflow.log_dict(result, f"results/{session_id}.json")
+                mlflow.log_dict(result, f"results_{idx+1}.json")
 
     return results
 
@@ -482,4 +505,9 @@ print_results_task = PythonOperator(
 )
 
 # Set task dependencies
+# 1. Pull data from S3
+# 2. Group conversations by session_id 
+# 3. Process all conversation turns (keeping them separate for individual evaluation)
+# 4. Evaluate each conversation turn individually
+# 5. Print results
 pull_data_task >> group_sessions_task >> merge_sessions_task >> evaluate_sessions_task >> print_results_task 
