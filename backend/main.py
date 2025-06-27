@@ -11,13 +11,10 @@ sentry_sdk.init(
     # Add data like request headers and IP for users,
     # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
     send_default_pii=True,
-
     # ACTIVATE TRACING
-
     # Set traces_sample_rate to 1.0 to capture 100%
     # of transactions for tracing.
     # traces_sample_rate=1.0,
-
     # ACTIVATE PROFILING
     # # Set traces_sample_rate to 1.0 to capture 100%
     # # of transactions for tracing.
@@ -55,9 +52,11 @@ app.add_middleware(
 app.include_router(realtime_router)
 app.include_router(agent_realtime_router)
 
+
 @app.get("/sentry-debug")
 async def trigger_error():
     division_by_zero = 1 / 0
+
 
 @app.get("/", response_model=GreetingResponse)
 def read_root() -> GreetingResponse:

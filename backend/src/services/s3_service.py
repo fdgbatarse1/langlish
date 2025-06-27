@@ -145,7 +145,7 @@ class S3Service:
             content_type="audio/pcm",
             metadata=metadata,
         )
-    
+
     def upload_text_streamline(
         self,
         text_data: str,
@@ -185,7 +185,9 @@ class S3Service:
             )
 
             # Generate URL
-            s3_url = f"https://{self.bucket_name}.s3.{AWS_S3_REGION}.amazonaws.com/{s3_key}"
+            s3_url = (
+                f"https://{self.bucket_name}.s3.{AWS_S3_REGION}.amazonaws.com/{s3_key}"
+            )
             logger.info(f"✅ Text uploaded successfully to S3: {s3_url}")
             return s3_url
 
@@ -195,7 +197,7 @@ class S3Service:
         except Exception as e:
             logger.error(f"🔴 Unexpected error uploading text to S3: {e}")
             return None
-        
+
     def upload_text_agent_streamline(
         self,
         text_data: str,
@@ -235,7 +237,9 @@ class S3Service:
             )
 
             # Generate URL
-            s3_url = f"https://{self.bucket_name}.s3.{AWS_S3_REGION}.amazonaws.com/{s3_key}"
+            s3_url = (
+                f"https://{self.bucket_name}.s3.{AWS_S3_REGION}.amazonaws.com/{s3_key}"
+            )
             logger.info(f"✅ Text uploaded successfully to S3: {s3_url}")
             return s3_url
 
@@ -245,8 +249,6 @@ class S3Service:
         except Exception as e:
             logger.error(f"🔴 Unexpected error uploading text to S3: {e}")
             return None
-    
-
 
 
 s3_service = S3Service() if AWS_S3_BUCKET_NAME else None
